@@ -104,6 +104,9 @@ trait ExpandTrait
         $this->addSelectForExpand($parentBuilder, $expandable);
 
         $parentBuilder->with($expandable, function (Relation $relationshipBuilder) use ($expandable, $details, $relation, $model) {
+            /**
+             * @var Relation<TModelClass, TRelatedModel, TModelClass> $relationshipBuilder
+             */
             $parsedDetails = StringUtils::getSortedDetails($details);
 
             $selects_done = false;
@@ -209,7 +212,7 @@ trait ExpandTrait
     }
 
     /**
-     * @param Builder $relationshipBuilder
+     * @param Builder<TModelClass> $relationshipBuilder
      * @param string $value
      * @return void
      */

@@ -13,6 +13,8 @@ use Illuminate\Database\Eloquent\Relations\Relation;
 
 /**
  * @template TModelClass of Model
+ * @template TDeclaringModel of Model
+ * @template TResult of Model
  * @template TRelatedModel of Model
  *
  */
@@ -84,7 +86,7 @@ trait SelectTrait
     }
 
     /**
-     * @param Builder<TModelClass>|Relation<TModelClass> $builder
+     * @param Builder<TModelClass>|Relation<TModelClass, TDeclaringModel, TResult> $builder
      * @return void
      * @throws \ReflectionException
      */

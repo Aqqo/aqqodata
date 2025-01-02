@@ -25,7 +25,7 @@ use Aqqo\OData\Traits\ResponseTrait;
  */
 class Query implements \JsonSerializable
 {
-    /** @use SelectTrait<TModelClass, TRelatedModel> */
+    /** @use SelectTrait<TModelClass, TRelatedModel, TModelClass, TModelClass> */
     use SelectTrait;
     /** @use FilterTrait<TModelClass, TRelatedModel> */
     use FilterTrait;

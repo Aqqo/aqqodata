@@ -30,15 +30,15 @@ trait ResponseTrait
         }
 
         if ($all_records_count > ($count + ($this->subject->getQuery()->offset ?? 0))) {
-            $uri = $_SERVER['REQUEST_URI'];
+            $uri = $_SERVER['REQUEST_URI'] ?? '';
 
             if ($this->subject->getQuery()->offset === 0) {
                 $skip = $this->subject->getQuery()->limit;
-                $response['@nextLink'] = $_SERVER['HTTP_HOST'] . $uri . "&\$skip={$skip}";
+                $response['@nextLink'] = ($_SERVER['HTTP_HOST'] ?? rtrim((string)env('APP_URL'), '/') . '/') . $uri . (str_contains($uri, '?') ? '&' : '?') . "\$skip={$skip}";
             } else {
                 $skip = $this->subject->getQuery()->offset + $this->subject->getQuery()->limit;
                 $uri = str_replace('$skip=' . $this->subject->getQuery()->offset, "\$skip={$skip}", $uri);
-                $response['@nextLink'] = $_SERVER['HTTP_HOST'] . $uri;
+                $response['@nextLink'] = ($_SERVER['HTTP_HOST'] ?? rtrim((string)env('APP_URL'), '/') . '/' ) . $uri;
             }
         }
 
