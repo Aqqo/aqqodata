@@ -210,7 +210,7 @@ trait FilterTrait
      */
     private function isValidFilter(string $column, string $operator, string $value, Builder $builder): string|bool
     {
-        if (empty($column) || empty($operator) || empty($value)) {
+        if (empty($column) || empty($operator) || ($value != 0 && empty($value))) {
             return false;
         }
 
@@ -281,7 +281,7 @@ trait FilterTrait
             } elseif (!empty($match[3])) {
                 // String literals without quotes
                 return $match[3];
-            } elseif (!empty($match[4])) {
+            } elseif (isset($match[4]) && is_numeric($match[4])) {
                 // Numeric values
                 return $match[4];
             } elseif (!empty($match[6])) {
@@ -303,6 +303,13 @@ trait FilterTrait
             $operator = OperatorUtils::mapOperator($tokens[0], $inverseOperator);
             $value = OperatorUtils::getValueBasedOnOperator($tokens[0], $tokens[4]);
         } else if (isset($tokens[1]) && ($tokens[1] == 'any' || $tokens[1] == 'all')) {
+            // Fixes for contains, startswith, endswith etc.
+            if (isset($tokens[5]) && !isset($tokens[6])) {
+                $tokens[6] = $tokens[5];
+                $tokens[5] = $tokens[7];
+                $tokens[7] = $tokens[9];
+            }
+
             if (!isset($tokens[6])) {
                 throw new \Exception('Invalid syntax');
             }
