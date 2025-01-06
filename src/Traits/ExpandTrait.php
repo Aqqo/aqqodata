@@ -97,6 +97,7 @@ trait ExpandTrait
             $builder = $builder->getQuery();
         }
 
+
         // First, split the details by semicolons to separate different options
         $parsedOptions = StringUtils::getSortedDetails($details, ';');
 
@@ -198,7 +199,7 @@ trait ExpandTrait
     /**
      * Handle the $orderby part of an expand.
      *
-     * @param Builder $builder
+     * @param Builder<TModelClass> $builder
      * @param string  $value
      *
      * @return void

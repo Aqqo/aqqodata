@@ -24,7 +24,7 @@ trait FilterTrait
         $filter = $this->request?->input('$filter');
 
         if (empty($filter)) {
-            preg_match('/\(([^)]+)\)/', $this->request->url(), $matches);
+            preg_match('/\(([^)]+)\)/', $this->request?->url() ?? '', $matches);
             if (!empty($matches[1])) {
                 $filter = "{$this->subject->getModel()->getKeyName()} eq '{$matches[1]}'";
             } else {
@@ -259,6 +259,7 @@ trait FilterTrait
      * @param string $input
      * @param bool $inverseOperator
      * @return array<int, string>
+     * @throws \Exception
      */
     private function splitInput(string $input, bool $inverseOperator = false): array
     {
@@ -269,8 +270,8 @@ trait FilterTrait
         // 4. Numeric values
         // 5. Field names or identifiers
         $pattern = '/\b(contains|startswith|endswith|and|or|not|eq|ne|gt|ge|lt|le)\b|([(),])|\'([^\']*)\'|(\d+(\.\d+)?)|([A-Za-z_][A-Za-z0-9_]*)/i';
-        $lambda = null;
-        $relation = null;
+        $lambda = '';
+        $relation = '';
         // Perform global matching
         preg_match_all($pattern, $input, $matches, PREG_SET_ORDER);
 
