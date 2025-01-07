@@ -3,6 +3,7 @@
 namespace Aqqo\OData\Tests\Testclasses;
 
 use Aqqo\OData\Attributes\ODataProperty;
+use Aqqo\OData\Attributes\ODataRelationship;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -21,6 +22,7 @@ class RelatedModel extends Model
         return $this->belongsTo(TestModel::class);
     }
 
+    #[ODataRelationship('nestedRelatedModels')]
     public function nestedRelatedModels(): HasMany
     {
         return $this->hasMany(NestedRelatedModel::class);
