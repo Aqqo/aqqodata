@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Carbon;
 
@@ -36,10 +37,10 @@ class TestModel extends Model
         return $this->hasMany(RelatedModel::class);
     }
 
-    #[ODataRelationship(name: 'related_model')]
-    public function relatedModel(): BelongsTo
+    #[ODataRelationship(name: 'relatedModel')]
+    public function relatedModel(): HasOne
     {
-        return $this->belongsTo(RelatedModel::class);
+        return $this->hasOne(RelatedModel::class);
     }
 
     public function otherRelatedModels(): HasMany
