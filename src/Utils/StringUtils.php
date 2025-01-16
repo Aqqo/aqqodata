@@ -14,7 +14,7 @@ class StringUtils
      *
      * @param string $expression
      * @param string $separator
-     * @return array
+     * @return array<string>
      */
     public static function splitODataExpression(string $expression, string $separator = ','): array
     {
