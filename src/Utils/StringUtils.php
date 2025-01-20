@@ -14,6 +14,7 @@ class StringUtils
      *
      * @param string $expression
      * @param string $separator
+     * @throws \InvalidArgumentException
      * @return array<string>
      */
     public static function splitODataExpression(string $expression, string $separator = ','): array
@@ -29,9 +30,11 @@ class StringUtils
             if ($char === '(') {
                 $depth++;
             } elseif ($char === ')') {
-                if ($depth > 0) {
-                    $depth--;
-                }
+                $depth--;
+            }
+
+            if ($depth < 0) {
+                throw new \InvalidArgumentException('Unbalanced parentheses in OData expression');
             }
 
             if ($char === $separator && $depth === 0) {
@@ -40,6 +43,10 @@ class StringUtils
             } else {
                 $current .= $char;
             }
+        }
+
+        if ($depth !== 0) {
+            throw new \InvalidArgumentException('Unbalanced parentheses in OData expression');
         }
 
         if (trim($current) !== '') {
