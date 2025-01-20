@@ -6,6 +6,7 @@ use Aqqo\OData\Utils\StringUtils;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use ReflectionException;
 
@@ -43,7 +44,7 @@ trait ExpandTrait
      * Recursively process an expand expression and apply it to the builder.
      *
      * @param string  $expand
-     * @param Builder $builder
+     * @param Builder<TModelClass> $builder
      * @param string  $parentRelation
      *
      * @return void
@@ -61,7 +62,7 @@ trait ExpandTrait
                 if ($expandable) {
                     $this->addSelectForExpand($builder, $relation);
 
-                    $builder->with([$expandable => function ($query) use ($details, $relation, $expandable) {
+                    $builder->with([$expandable => function ($query) use ($details, $expandable) {
                         $this->handleExpandDetails($query, $details, $expandable);
                     }]);
                 }
@@ -83,7 +84,7 @@ trait ExpandTrait
     /**
      * Handle expand details such as $filter, $select, and nested $expand.
      *
-     * @param Builder|Relation $builder
+     * @param Builder<TModelClass>|Relation<TModelClass, TRelatedModel, Collection<int, TRelatedModel>> $builder
      * @param string $details
      * @param string $relation
      *
@@ -168,7 +169,7 @@ trait ExpandTrait
     /**
      * Handle the $select part of an expand.
      *
-     * @param Builder $builder
+     * @param Builder<TModelClass> $builder
      * @param string  $value
      * @param string  $expandable
      *
@@ -185,7 +186,7 @@ trait ExpandTrait
     /**
      * Handle the $filter part of an expand.
      *
-     * @param Builder $builder
+     * @param Builder<TModelClass> $builder
      * @param string  $value
      *
      * @return void
@@ -212,7 +213,7 @@ trait ExpandTrait
     /**
      * Retrieve the related model for a given expandable relation.
      *
-     * @param Builder $builder
+     * @param Builder<TModelClass> $builder
      * @param string  $expandable
      *
      * @return Model
