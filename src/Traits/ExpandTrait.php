@@ -103,29 +103,7 @@ trait ExpandTrait
         $parsedOptions = StringUtils::getSortedDetails($details, ';');
 
         foreach ($parsedOptions as $option) {
-            // Check if the option starts with a known key
-            if (Str::startsWith(strtolower($option), '$select=')) {
-                $value = substr($option, strlen('$select='));
-                $this->handleSelect($builder, $value, $relation);
-            } elseif (Str::startsWith(strtolower($option), '$filter=')) {
-                $value = substr($option, strlen('$filter='));
-                $this->handleFilter($builder, $value);
-            } elseif (Str::startsWith(strtolower($option), '$expand=')) {
-                $value = substr($option, strlen('$expand='));
-
-                // Split the $expand value by commas, respecting nested parentheses
-                $expandExpressions = StringUtils::splitODataExpression($value, ',');
-
-                foreach ($expandExpressions as $expr) {
-                    $expr = trim($expr);
-                    if (!empty($expr)) {
-                        $this->processExpandExpression($expr, $builder, $relation);
-                    }
-                }
-            } else {
-                // Assume it's an implied $expand without a prefix
-                $this->processExpandExpression($option, $builder, $relation);
-            }
+            $this->handleOption($builder, $option, $relation);
         }
 
         // If no $select is specified, apply default selects
@@ -133,6 +111,42 @@ trait ExpandTrait
             return Str::startsWith(strtolower($option), '$select=');
         })) {
             $this->resolveToDefaultSelects($builder);
+        }
+    }
+
+    /**
+     * Handle an individual option within an expand.
+     *
+     * @param Builder<TModelClass>|Relation<TModelClass, TRelatedModel, Collection<int, TRelatedModel>> $builder
+     * @param string  $option
+     * @param string  $relation
+     *
+     * @return void
+     */
+    private function handleOption(Builder|Relation $builder, string $option, string $relation): void
+    {
+        // Check if the option starts with a known key
+        if (Str::startsWith(strtolower($option), '$select=')) {
+            $value = substr($option, strlen('$select='));
+            $this->handleSelect($builder, $value, $relation);
+        } elseif (Str::startsWith(strtolower($option), '$filter=')) {
+            $value = substr($option, strlen('$filter='));
+            $this->handleFilter($builder, $value);
+        } elseif (Str::startsWith(strtolower($option), '$expand=')) {
+            $value = substr($option, strlen('$expand='));
+
+            // Split the $expand value by commas, respecting nested parentheses
+            $expandExpressions = StringUtils::splitODataExpression($value, ',');
+
+            foreach ($expandExpressions as $expr) {
+                $expr = trim($expr);
+                if (!empty($expr)) {
+                    $this->processExpandExpression($expr, $builder, $relation);
+                }
+            }
+        } else {
+            // Assume it's an implied $expand without a prefix
+            $this->processExpandExpression($option, $builder, $relation);
         }
     }
 
