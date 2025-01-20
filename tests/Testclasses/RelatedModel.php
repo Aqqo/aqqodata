@@ -22,7 +22,7 @@ class RelatedModel extends Model
         return $this->belongsTo(TestModel::class);
     }
 
-    #[ODataRelationship('nestedRelatedModels')]
+    #[ODataRelationship(name: 'nestedRelatedModels')]
     public function nestedRelatedModels(): HasMany
     {
         return $this->hasMany(NestedRelatedModel::class);
