@@ -23,7 +23,6 @@ beforeEach(function () {
 
 it('can have many parameters', function() {
     $models = createQueryFromParams(skip: 0, top: 2, filter: 'RelatedModel/any(s:s/cost eq 1)', count: true, expand: 'relatedModel,relatedModels($expand=nestedRelatedModels)')->get();
-    var_dump($models->toArray());
     $first = $models->first();
     expect($models->count())->toEqual(1)
         ->and(array_key_exists('relatedModels', $first) && !empty($first['relatedModels'][0]['name']))->toEqual(true)

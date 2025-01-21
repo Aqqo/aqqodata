@@ -35,7 +35,6 @@ composer test
 
 ### Code style
 
-
 ```bash
 composer analyse
 ```
