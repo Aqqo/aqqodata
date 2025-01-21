@@ -6,8 +6,8 @@ use Aqqo\OData\Utils\StringUtils;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
-use ReflectionClass;
 use ReflectionException;
 
 /**
@@ -36,16 +36,117 @@ trait ExpandTrait
         foreach ($expandExpressions as $expand) {
             $expand = trim($expand);
 
-            if (Str::contains($expand, '(')) {
-                [$relation, $details] = $this->parseExpandWithDetails($expand);
-                if ($relation && $details) {
-                    /** @var Builder<TModelClass> $parentBuilder */
-                    $parentBuilder = $this->subject;
-                    $this->handleExpandDetails($parentBuilder, $details, $relation);
+            $this->processExpandExpression($expand, $this->subject);
+        }
+    }
+
+    /**
+     * Recursively process an expand expression and apply it to the builder.
+     *
+     * @param string  $expand
+     * @param Builder<TModelClass> $builder
+     * @param string  $parentRelation
+     *
+     * @return void
+     * @throws ReflectionException
+     */
+    private function processExpandExpression(string $expand, Builder $builder, string $parentRelation = ''): void
+    {
+        if (Str::contains($expand, '(')) {
+            [$relation, $details] = $this->parseExpandWithDetails($expand);
+
+            if ($relation && $details) {
+                // Determine if the relation is expandable
+                $expandable = $this->isPropertyExpandable($relation, $parentRelation);
+
+                if ($expandable) {
+                    $this->addSelectForExpand($builder, $relation);
+
+                    $builder->with([$expandable => function ($query) use ($details, $expandable) {
+                        $this->handleExpandDetails($query, $details, $expandable);
+                    }]);
                 }
-            } else {
-                $this->applySimpleExpand($expand);
             }
+        } else {
+            // Simple relation without nested expands
+            $expandable = $this->isPropertyExpandable($expand, $parentRelation);
+
+            if ($expandable) {
+                $this->addSelectForExpand($builder, $expand);
+
+                $builder->with([$expandable => function ($query) {
+                    $this->resolveToDefaultSelects($query);
+                }]);
+            }
+        }
+    }
+
+    /**
+     * Handle expand details such as $filter, $select, and nested $expand.
+     *
+     * @param Builder<TModelClass>|Relation<TModelClass, TRelatedModel, Collection<int, TRelatedModel>> $builder
+     * @param string $details
+     * @param string $relation
+     *
+     * @return void
+     * @throws ReflectionException
+     */
+    private function handleExpandDetails(Builder|Relation $builder, string $details, string $relation): void
+    {
+        // If $builder is a Relation, get the underlying Builder
+        if ($builder instanceof Relation) {
+            $builder = $builder->getQuery();
+        }
+
+
+        // First, split the details by semicolons to separate different options
+        $parsedOptions = StringUtils::getSortedDetails($details, ';');
+
+        foreach ($parsedOptions as $option) {
+            $this->handleOption($builder, $option, $relation);
+        }
+
+        // If no $select is specified, apply default selects
+        if (!collect($parsedOptions)->contains(function($option) {
+            return Str::startsWith(strtolower($option), '$select=');
+        })) {
+            $this->resolveToDefaultSelects($builder);
+        }
+    }
+
+    /**
+     * Handle an individual option within an expand.
+     *
+     * @param Builder<TModelClass>|Relation<TModelClass, TRelatedModel, Collection<int, TRelatedModel>> $builder
+     * @param string  $option
+     * @param string  $relation
+     *
+     * @return void
+     */
+    private function handleOption(Builder|Relation $builder, string $option, string $relation): void
+    {
+        // Check if the option starts with a known key
+        if (Str::startsWith(strtolower($option), '$select=')) {
+            $value = substr($option, strlen('$select='));
+            $this->handleSelect($builder, $value, $relation);
+        } elseif (Str::startsWith(strtolower($option), '$filter=')) {
+            $value = substr($option, strlen('$filter='));
+            $this->handleFilter($builder, $value);
+        } elseif (Str::startsWith(strtolower($option), '$expand=')) {
+            $value = substr($option, strlen('$expand='));
+
+            // Split the $expand value by commas, respecting nested parentheses
+            $expandExpressions = StringUtils::splitODataExpression($value, ',');
+
+            foreach ($expandExpressions as $expr) {
+                $expr = trim($expr);
+                if (!empty($expr)) {
+                    $this->processExpandExpression($expr, $builder, $relation);
+                }
+            }
+        } else {
+            // Assume it's an implied $expand without a prefix
+            $this->processExpandExpression($option, $builder, $relation);
         }
     }
 
@@ -53,6 +154,7 @@ trait ExpandTrait
      * Parse an expand expression that contains details (e.g., filters, selects).
      *
      * @param string $expand
+     *
      * @return array{0: string|null, 1: string|null} [relation, details] or [null, null] if parsing fails
      */
     private function parseExpandWithDetails(string $expand): array
@@ -64,85 +166,12 @@ trait ExpandTrait
         return [null, null];
     }
 
-    /**
-     * Apply a simple expand without any additional details.
-     *
-     * @param string $expand
-     * @return void
-     */
-    private function applySimpleExpand(string $expand): void
-    {
-        $expandable = $this->isPropertyExpandable($expand);
-
-        if ($expandable) {
-            $this->addSelectForExpand($this->subject, $expandable);
-            $this->subject->with([$expandable => function ($builder) {
-                $this->resolveToDefaultSelects($builder);
-            }]);
-        }
-    }
-
-    /**
-     * Handle expand details such as $filter, $select, and nested $expand.
-     *
-     * @param Builder<TModelClass> $parentBuilder
-     * @param string $details
-     * @param string $relation
-     * @return void
-     * @throws ReflectionException
-     */
-    private function handleExpandDetails(Builder $parentBuilder, string $details, string $relation): void
-    {
-        $expandable = $this->isPropertyExpandable($relation);
-
-        if (!$expandable) {
-            return;
-        }
-
-        $model = $this->getRelatedModel($parentBuilder, $expandable);
-
-        $this->addSelectForExpand($parentBuilder, $expandable);
-
-        $parentBuilder->with($expandable, function (Relation $relationshipBuilder) use ($expandable, $details, $relation, $model) {
-            /**
-             * @var Relation<TModelClass, TRelatedModel, TModelClass> $relationshipBuilder
-             */
-            $parsedDetails = StringUtils::getSortedDetails($details);
-
-            $selects_done = false;
-            foreach ($parsedDetails as $detail) {
-                [$key, $value] = $this->parseDetail($detail);
-
-                switch ($key) {
-                    case '$select':
-                        $this->handleSelect($relationshipBuilder->getQuery(), $value, $expandable);
-                        $selects_done = true;
-                        break;
-
-                    case '$filter':
-                        $this->handleFilter($relationshipBuilder->getQuery(), $value);
-                        break;
-
-                    case '$expand':
-                        $this->handleNestedExpand($relationshipBuilder->getQuery(), $value, $relation, $model);
-                        break;
-
-                    case '$orderby':
-                        $this->handleOrderBy($relationshipBuilder->getQuery(), $value);
-                        break;
-                }
-            }
-
-            if (!$selects_done) {
-                $this->resolveToDefaultSelects($relationshipBuilder);
-            }
-        });
-    }
 
     /**
      * Parse a detail string into key and value.
      *
      * @param string $detail
+     *
      * @return array{0: string, 1: string} [key, value]
      */
     private function parseDetail(string $detail): array
@@ -154,81 +183,55 @@ trait ExpandTrait
     /**
      * Handle the $select part of an expand.
      *
-     * @param Builder<TModelClass> $relationshipBuilder
-     * @param string $value
-     * @param string $expandable
+     * @param Builder<TModelClass> $builder
+     * @param string  $value
+     * @param string  $expandable
+     *
      * @return void
      */
-    private function handleSelect(Builder $relationshipBuilder, string $value, string $expandable): void
+    private function handleSelect(Builder $builder, string $value, string $expandable): void
     {
         if ($this->select) {
-            $this->addSelectForExpand($relationshipBuilder, $expandable);
-            $this->appendSelectQuery($value, $relationshipBuilder);
+            $this->addSelectForExpand($builder, $expandable);
+            $this->appendSelectQuery($value, $builder);
         }
     }
 
     /**
      * Handle the $filter part of an expand.
      *
-     * @param Builder<TModelClass> $relationshipBuilder
-     * @param string $value
-     * @return void
-     * @throws ReflectionException
-     */
-    private function handleFilter(Builder $relationshipBuilder, string $value): void
-    {
-        $this->appendFilterQuery($value, $relationshipBuilder);
-    }
-
-    /**
-     * Handle nested $expand within an expand.
+     * @param Builder<TModelClass> $builder
+     * @param string  $value
      *
-     * @param Builder<TModelClass> $relationshipBuilder
-     * @param string $value
-     * @param string $parentRelation
-     * @param Model $model
      * @return void
      * @throws ReflectionException
      */
-    private function handleNestedExpand(Builder $relationshipBuilder, string $value, string $parentRelation, Model $model): void
+    private function handleFilter(Builder $builder, string $value): void
     {
-        if (Str::contains($value, '(')) {
-            [$nestedRelation, $nestedDetails] = $this->parseExpandWithDetails($value);
-            if ($nestedRelation && $nestedDetails) {
-                $fullRelation = "{$parentRelation}.{$nestedRelation}";
-                $this->handleExpandDetails($relationshipBuilder, $nestedDetails, $fullRelation);
-            }
-        } else {
-            foreach (explode(',', $value) as $relation) {
-                $nestedExpandable = $this->isPropertyExpandable($relation, (new ReflectionClass($model))->getShortName());
-
-                if ($nestedExpandable) {
-                    $relationshipBuilder->with([$nestedExpandable => function ($builder) {
-                        $this->resolveToDefaultSelects($builder);
-                    }]);
-                }
-            }
-        }
+        $this->appendFilterQuery($value, $builder);
     }
 
     /**
-     * @param Builder<TModelClass> $relationshipBuilder
-     * @param string $value
+     * Handle the $orderby part of an expand.
+     *
+     * @param Builder<TModelClass> $builder
+     * @param string  $value
+     *
      * @return void
      */
-    private function handleOrderBy(Builder $relationshipBuilder, string $value): void
+    private function handleOrderBy(Builder $builder, string $value): void
     {
-        $this->appendOrderBy($value, $relationshipBuilder);
+        $this->appendOrderBy($value, $builder);
     }
 
     /**
      * Retrieve the related model for a given expandable relation.
      *
      * @param Builder<TModelClass> $builder
-     * @param string $expandable
+     * @param string  $expandable
+     *
      * @return Model
      * @throws ReflectionException
-     * @phpstan-param Builder<TModelClass> $builder
      */
     private function getRelatedModel(Builder $builder, string $expandable): Model
     {

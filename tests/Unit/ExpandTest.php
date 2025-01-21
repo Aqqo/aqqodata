@@ -11,6 +11,12 @@ beforeEach(function () {
                 'test_model_id' => $model->id,
                 'name' => $model->name
             ]);
+
+
+        $model->relatedModel->nestedRelatedModels()->create([
+            'related_model_id' => $model->relatedModel->id,
+            'name' => $model->name
+        ]);
     });
 });
 
@@ -31,4 +37,12 @@ it('can have multiple expands', function () {
     $first = $models->first();
     expect(array_key_exists('relatedModels', $first) && !empty($first['relatedModels'][0]['name']))->toEqual(true)
         ->and(array_key_exists('relatedModel', $first) && !empty($first['relatedModel']['name']))->toEqual(true);
+});
+
+it('can have multiple expands with details', function () {
+    $models = createQueryFromParams(expand: 'relatedModel($expand=nestedRelatedModels),relatedModels')->get();
+    $first = $models->first();
+    expect(array_key_exists('relatedModels', $first) && !empty($first['relatedModels'][0]['name']))->toEqual(true)
+        ->and(array_key_exists('relatedModel', $first) && !empty($first['relatedModel']['name']))->toEqual(true)
+        ->and(array_key_exists('nestedRelatedModels', $first['relatedModel'])  && !empty($first['relatedModel']['nestedRelatedModels'][0]['name']))->toEqual(true);
 });

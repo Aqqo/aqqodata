@@ -7,7 +7,6 @@ use Aqqo\OData\Attributes\ODataRelationship;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 trait AttributesTrait
@@ -160,13 +159,43 @@ trait AttributesTrait
      */
     protected function isPropertyExpandable(string $property, string|null $className = null): false|string
     {
-        $className ??= $this->subjectModelReflectionClass->getShortName();
+        // If className is not provided, get it from the subject model
+        if (empty($className)) {
+            $className = $this->subjectModelReflectionClass->getShortName();
+        }
+        $classNameLower = strtolower(Str::singular($className));
+
+        // Handle nested properties
+        if (Str::contains($property, '.')) {
+            $segments = explode('.', $property);
+            $currentClass = $classNameLower;
+
+            foreach ($segments as $segment) {
+                $segmentLower = strtolower($segment);
+
+                if (isset($this->expandables[$currentClass][$segmentLower])) {
+                    $currentClass = strtolower(Str::singular($this->expandables[$currentClass][$segmentLower]));
+                } else {
+                    return false;
+                }
+            }
+
+            return $currentClass;
+        }
+
+        // If expandables are not defined, assume the property is expandable
         if (empty($this->expandables)) {
             return $property;
-        } else if (str_contains($property, '.')) {
-            [$className, $property] = array_slice(explode('.', $property), -2, 2);
         }
-        return $this->expandables[strtolower(Str::singular($className))][strtolower($property)] ?? false;
+
+        // Singularize and lowercase the class name for lookup
+        $propertyLower = strtolower($property);
+
+        if (isset($this->expandables[$classNameLower][$propertyLower])) {
+            return $this->expandables[$classNameLower][$propertyLower];
+        }
+
+        return false;
     }
 
     /**

@@ -60,6 +60,7 @@ class Testcase extends \Orchestra\Testbench\TestCase
             $table->integer('test_model_id');
             $table->string('name');
             $table->string('full_name')->nullable();
+            $table->integer('cost')->nullable();
         });
 
         $app['db']->connection()->getSchemaBuilder()->create('nested_related_models', function (Blueprint $table) {

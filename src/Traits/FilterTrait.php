@@ -4,9 +4,9 @@ namespace Aqqo\OData\Traits;
 
 use Aqqo\OData\Utils\ClassUtils;
 use Aqqo\OData\Utils\OperatorUtils;
-use Aqqo\OData\Utils\StringUtils;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 use ReflectionClass;
 
 /**
@@ -46,7 +46,7 @@ trait FilterTrait
      */
     public function appendFilterQuery(string $filter, Builder $builder, string $statement = 'where'): void
     {
-        $expressions = StringUtils::splitODataExpression($filter);
+        $expressions = $this->splitFilter($filter);
 
         if ($this->hasNestedExpressions($filter, $expressions)) {
             $this->applyNestedExpressions($expressions, $builder, $statement);
@@ -332,5 +332,70 @@ trait FilterTrait
             $lambda,
             $relation
         ];
+    }
+
+    /**
+     * Splits an OData filter into its constituent parts, respecting nested parentheses.
+     *
+     * @param string $expr The OData expression to split.
+     * @return array<string> The split components of the expression.
+     */
+    private function splitFilter(string $expr): array
+    {
+        // Early return if there are no parentheses or logical operators
+        if (!Str::contains($expr, ['(', ')', ' and ', ' or '])) {
+            // If commas are present, split by commas; otherwise, return the trimmed expression
+            return Str::contains($expr, ',')
+                ? array_map('trim', explode(',', $expr))
+                : [trim($expr)];
+        }
+
+        $result = [];
+        $current = '';
+        $depth = 0;
+        $length = strlen($expr);
+        $i = 0;
+
+        while ($i < $length) {
+            $char = $expr[$i];
+
+            // Handle opening parenthesis
+            if ($char === '(') {
+                $depth++;
+            }
+            // Handle closing parenthesis
+            elseif ($char === ')') {
+                $depth--;
+            }
+
+            // Check for logical operators at depth 0
+            if ($depth === 0) {
+                // Check for ' and ' (length 5) and ' or ' (length 4)
+                if (substr($expr, $i, 5) === ' and ') {
+                    $result[] = trim($current);
+                    $result[] = 'and';
+                    $current = '';
+                    $i += 5;
+                    continue;
+                } elseif (substr($expr, $i, 4) === ' or ') {
+                    $result[] = trim($current);
+                    $result[] = 'or';
+                    $current = '';
+                    $i += 4;
+                    continue;
+                }
+            }
+
+            // Accumulate the current character
+            $current .= $char;
+            $i++;
+        }
+
+        // Add any remaining segment
+        if (($current = trim($current)) !== '') {
+            $result[] = $current;
+        }
+
+        return $result;
     }
 }
