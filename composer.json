@@ -20,8 +20,8 @@
     ],
     "require": {
         "php": "^8.2",
-        "illuminate/database": "^v11.32.0",
-        "illuminate/http": "^v11.32.0",
+        "illuminate/database": "^v11.40.0",
+        "illuminate/http": "^v11.40.0",
         "spatie/laravel-package-tools": "^1.16"
     },
     "require-dev": {
