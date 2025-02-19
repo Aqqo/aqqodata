@@ -159,7 +159,7 @@ class Query implements \JsonSerializable
         try {
             return $this->resolveCollection($this->subject->get());
         } catch (\Exception $e) {
-            throw new QueryException($e->getMessage(), (int)$e->getCode(), $e);
+            throw new QueryException($e->getMessage(), $e->getCode(), $e);
         }
     }
 
@@ -190,7 +190,7 @@ class Query implements \JsonSerializable
     {
         $attributes = [];
         foreach ($this->selects[ClassUtils::getShortName($item)] as $odata_column => $db_column) {
-            $attributes[$odata_column] = $item->{$db_column};
+            $attributes[$odata_column] = $item->getOriginal($db_column);
         }
         $item->setRawAttributes($attributes);
         foreach ($item->getRelations() as $key => $relation) {
