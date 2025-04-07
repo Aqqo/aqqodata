@@ -23,3 +23,12 @@ it('can filter models by name not equals', function () {
     expect($models)->toHaveCount(4);
     expect($models->first()['name'])->not()->toEqual($name);
 });
+
+it('can filter models using in operator', function () {
+    $names = $this->models->take(2)->pluck('name')->toArray();
+    $models = createQueryFromParams(filter: "name in ('{$names[0]}', '{$names[1]}')")
+        ->get();
+
+    expect($models)->toHaveCount(2);
+    expect($models->pluck('name')->toArray())->toEqual($names);
+});

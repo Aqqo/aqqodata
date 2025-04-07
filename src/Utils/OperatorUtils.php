@@ -18,6 +18,7 @@ class OperatorUtils
         'gt' => ['>', '<='],
         'le' => ['<=', '>'],
         'lt' => ['<', '>='],
+        'in' => ['in', 'not in'],
         'and' => ['AND', 'OR'],
         'or' => ['OR', 'AND'],
         'not' => ['NOT', ''],  // No straightforward inverse for NOT
@@ -49,28 +50,57 @@ class OperatorUtils
     ];
 
     /**
+     * Check if an operator exists in the map.
+     *
+     * @param string $odataOperator The operator to check
+     * @return bool True if the operator exists, false otherwise
+     */
+    public static function isValidOperator(string $odataOperator): bool
+    {
+        return isset(self::$operatorMap[$odataOperator]);
+    }
+
+    /**
      * Map OData operators to Laravel operators.
      *
-     * @param string $odataOperator
+     * @param string $odataOperator The OData operator to map
      * @param bool $inverse Return inverse operator if true
-     * @return string
+     * @return string The mapped operator
+     * @throws \InvalidArgumentException If the operator is not found in the map
      */
     public static function mapOperator(string $odataOperator, bool $inverse = false): string
     {
-        $map = self::$operatorMap[$odataOperator] ?? ['=', '='];
+        if (!self::isValidOperator($odataOperator)) {
+            throw new \InvalidArgumentException("Invalid operator: {$odataOperator}");
+        }
+
+        $map = self::$operatorMap[$odataOperator];
         return $inverse ? $map[1] : $map[0];
     }
 
     /**
-     * @param string $odataOperator
-     * @param string $value
-     * @return string
+     * Get the value based on the operator type.
+     *
+     * @param string $odataOperator The OData operator
+     * @param string|array<string> $value The value to process
+     * @return string The processed value
+     * @throws \InvalidArgumentException If the operator is not found in the map
      */
-    public static function getValueBasedOnOperator(string $odataOperator, string $value): string
+    public static function getValueBasedOnOperator(string $odataOperator, string|array $value): string
     {
-        if (isset(self::$operatorMap[$odataOperator][2])) {
-            return str_replace('{$value}', $value, self::$operatorMap[$odataOperator][2]);
+        if (!self::isValidOperator($odataOperator)) {
+            throw new \InvalidArgumentException("Invalid operator: {$odataOperator}");
         }
-        return $value;
+
+        if ($odataOperator === 'in' && is_array($value)) {
+            return '(' . implode(',', array_map(fn($v) => "'" . addslashes($v) . "'", $value)) . ')';
+        }
+
+        if (isset(self::$operatorMap[$odataOperator][2])) {
+            $stringValue = is_array($value) ? implode(',', $value) : (string)$value;
+            return str_replace('{$value}', addslashes($stringValue), self::$operatorMap[$odataOperator][2]);
+        }
+        
+        return addslashes(is_array($value) ? implode(',', $value) : (string)$value);
     }
 }

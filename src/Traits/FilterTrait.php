@@ -6,6 +6,7 @@ use Aqqo\OData\Utils\ClassUtils;
 use Aqqo\OData\Utils\OperatorUtils;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use ReflectionClass;
 
@@ -112,6 +113,8 @@ trait FilterTrait
         }
 
         $currentStatement = 'where';
+        $model = $builder->getModel();
+        $modelTable = $model->getTable();
 
         foreach ($groupedFilters as $filterPart) {
             $filterPart = trim($filterPart);
@@ -126,6 +129,13 @@ trait FilterTrait
                 continue;
             }
 
+            /**
+             * @var string $column
+             * @var string $operator
+             * @var string|array $value
+             * @var string $lambda
+             * @var string $relation
+             */
             [$column, $operator, $value, $lambda, $relation] = $this->splitInput($filterPart);
 
             if ($lambda) {
@@ -137,11 +147,13 @@ trait FilterTrait
                     }
 
                     $builder->{$function}($expandable, function ($query) use ($column, $operator, $value) {
-
                         if ($column = $this->isValidFilter($column, $operator, $value, $query)) {
-                            $query->where($column, $operator, $value);
+                            if ($operator === 'in' && is_array($value)) {
+                                $query->whereIn($column, $value);
+                            } else {
+                                $query->where($column, $operator, $value);
+                            }
                         }
-
                     });
                 }
                 continue;
@@ -151,7 +163,23 @@ trait FilterTrait
                 continue;
             }
 
-            $builder->{$currentStatement}($column, $operator, $value);
+            // Handle table name qualification
+            if (!str_contains((string)$column, '.')) {
+                // Get all the tables involved in the query
+                $query = $builder->getQuery();
+                $joins = $query->joins ?? [];
+                
+                // If we have joins and the column exists in multiple tables, qualify it with the model's table
+                if (!empty($joins)) {
+                    $column = "{$modelTable}.{$column}";
+                }
+            }
+
+            if ($operator === 'in' && is_array($value)) {
+                $builder->{$currentStatement . 'In'}($column, $value);
+            } else {
+                $builder->{$currentStatement}($column, $operator, $value);
+            }
         }
     }
 
@@ -203,15 +231,27 @@ trait FilterTrait
      *
      * @param string $column
      * @param string $operator
-     * @param string $value
+     * @param string|array<int<0, max>, string> $value
      * @param Builder<TModelClass> $builder
      * @return bool
      * @throws \ReflectionException
      */
-    private function isValidFilter(string $column, string $operator, string $value, Builder $builder): string|bool
+    private function isValidFilter(string $column, string $operator, string|array $value, Builder $builder): string|bool
     {
-        if (empty($column) || empty($operator) || ($value != 0 && empty($value))) {
+        if (empty($column) || empty($operator)) {
             return false;
+        }
+
+        // Special handling for in operator
+        if ($operator === 'in') {
+            if (!is_array($value) || empty($value)) {
+                return false;
+            }
+        } else {
+            // For other operators, value should not be empty (except for 0)
+            if ($value != 0 && empty($value)) {
+                return false;
+            }
         }
 
         $modelClass = get_class($builder->getModel());
@@ -234,6 +274,11 @@ trait FilterTrait
     {
         $condition = trim($condition, '()');
 
+        /**
+         * @var string $column
+         * @var string $operator
+         * @var string|array<int<0, max>, string> $value
+         */
         [$column, $operator, $value] = $this->splitInput($condition, $function === 'all');
 
         if (!$this->isPropertyFilterable("{$relation}.{$column}")) {
@@ -258,7 +303,7 @@ trait FilterTrait
      *
      * @param string $input
      * @param bool $inverseOperator
-     * @return array<int, string>
+     * @return array<int, array<int<0, max>, string>|string>
      * @throws \Exception
      */
     private function splitInput(string $input, bool $inverseOperator = false): array
@@ -269,7 +314,7 @@ trait FilterTrait
         // 3. String literals enclosed in single quotes
         // 4. Numeric values
         // 5. Field names or identifiers
-        $pattern = '/\b(contains|startswith|endswith|and|or|not|eq|ne|gt|ge|lt|le)\b|([(),])|\'([^\']*)\'|(\d+(\.\d+)?)|([A-Za-z_][A-Za-z0-9_]*)/i';
+        $pattern = '/\b(contains|startswith|endswith|and|or|not|eq|ne|gt|ge|lt|le|in)\b|([(),])|\'([^\']*)\'|(\d+(\.\d+)?)|([A-Za-z_][A-Za-z0-9_]*)/i';
         $lambda = '';
         $relation = '';
         // Perform global matching
@@ -296,6 +341,21 @@ trait FilterTrait
 
         if (count($tokens) < 3) {
             return ['', '', ''];
+        }
+
+        // Handle in operator
+        if (isset($tokens[1]) && $tokens[1] === 'in') {
+            $column = $tokens[0];
+            $operator = 'in';
+            // Extract values between parentheses
+            $value = [];
+            $inValues = array_slice($tokens, 2);
+            foreach ($inValues as $token) {
+                if ($token !== '(' && $token !== ')' && $token !== ',') {
+                    $value[] = $token;
+                }
+            }
+            return [$column, $operator, $value, $lambda, $relation];
         }
 
         // Corrected logic: Check tokens[0] for function-based operators
