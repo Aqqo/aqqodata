@@ -18,7 +18,7 @@ class OperatorUtils
         'gt' => ['>', '<='],
         'le' => ['<=', '>'],
         'lt' => ['<', '>='],
-        'in' => ['IN', 'NOT IN'],
+        'in' => ['in', 'not in'],
         'and' => ['AND', 'OR'],
         'or' => ['OR', 'AND'],
         'not' => ['NOT', ''],  // No straightforward inverse for NOT

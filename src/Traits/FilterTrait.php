@@ -346,7 +346,7 @@ trait FilterTrait
         // Handle in operator
         if (isset($tokens[1]) && $tokens[1] === 'in') {
             $column = $tokens[0];
-            $operator = 'in';
+            $operator = OperatorUtils::mapOperator($tokens[1], $inverseOperator);
             // Extract values between parentheses
             $value = [];
             $inValues = array_slice($tokens, 2);
