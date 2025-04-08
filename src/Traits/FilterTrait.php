@@ -362,12 +362,8 @@ trait FilterTrait
                     $value[] = trim($token, "'");
                 }
             }
-
-            return [$column, $operator, $value, $lambda, $relation];
-        }
-
-        // Corrected logic: Check tokens[0] for function-based operators
-        if (in_array($tokens[0], ['contains', 'startswith', 'endswith'], true)) {
+            // Corrected logic: Check tokens[0] for function-based operators
+        } else if (in_array($tokens[0], ['contains', 'startswith', 'endswith'], true)) {
             $column = $tokens[2];
             $operator = OperatorUtils::mapOperator($tokens[0], $inverseOperator);
             $value = OperatorUtils::getValueBasedOnOperator($tokens[0], $tokens[4]);
