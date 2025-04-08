@@ -159,7 +159,7 @@ class Query implements \JsonSerializable
         try {
             return $this->resolveCollection($this->subject->get());
         } catch (\Exception $e) {
-            throw new QueryException($e->getMessage(), $e->getCode() ?: 0, $e);
+            throw new QueryException($e->getMessage(), (int)$e->getCode() ?: 0, $e);
         }
     }
 

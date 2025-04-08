@@ -18,7 +18,7 @@ class OperatorUtils
         'gt' => ['>', '<='],
         'le' => ['<=', '>'],
         'lt' => ['<', '>='],
-        'in' => ['in', 'not in'],
+        'in' => ['IN', 'NOT IN'],
         'and' => ['AND', 'OR'],
         'or' => ['OR', 'AND'],
         'not' => ['NOT', ''],  // No straightforward inverse for NOT
@@ -92,7 +92,8 @@ class OperatorUtils
             throw new \InvalidArgumentException("Invalid operator: {$odataOperator}");
         }
 
-        if ($odataOperator === 'in' && is_array($value)) {
+        // Handle both uppercase and lowercase IN operator
+        if (strtolower($odataOperator) === 'in' && is_array($value)) {
             return '(' . implode(',', array_map(fn($v) => "'" . addslashes($v) . "'", $value)) . ')';
         }
 

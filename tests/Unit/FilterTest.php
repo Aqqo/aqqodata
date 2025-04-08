@@ -1,5 +1,7 @@
 <?php
 
+use Illuminate\Support\Facades\Log;
+
 use function Aqqo\OData\Tests\Feature\createQueryFromParams;
 
 beforeEach(function () {
@@ -26,7 +28,7 @@ it('can filter models by name not equals', function () {
 
 it('can filter models using in operator', function () {
     $names = $this->models->take(2)->pluck('name')->toArray();
-    $models = createQueryFromParams(filter: "name in ('{$names[0]}', '{$names[1]}')")
+    $models = createQueryFromParams(filter: "name IN ('{$names[0]}', '{$names[1]}')")
         ->get();
 
     expect($models)->toHaveCount(2);

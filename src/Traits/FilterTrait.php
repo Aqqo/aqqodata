@@ -175,7 +175,7 @@ trait FilterTrait
                 }
             }
 
-            if ($operator === 'in' && is_array($value)) {
+            if (strtolower($operator) === 'in' && is_array($value)) {
                 $builder->{$currentStatement . 'In'}($column, $value);
             } else {
                 $builder->{$currentStatement}($column, $operator, $value);
@@ -243,7 +243,7 @@ trait FilterTrait
         }
 
         // Special handling for in operator
-        if ($operator === 'in') {
+        if (strtolower($operator) === 'in') {
             if (!is_array($value) || empty($value)) {
                 return false;
             }
@@ -314,7 +314,7 @@ trait FilterTrait
         // 3. String literals enclosed in single quotes
         // 4. Numeric values
         // 5. Field names or identifiers
-        $pattern = '/\b(contains|startswith|endswith|and|or|not|eq|ne|gt|ge|lt|le|in)\b|([(),])|\'([^\']*)\'|(\d+(\.\d+)?)|([A-Za-z_][A-Za-z0-9_]*)/i';
+        $pattern = '/\b(contains|startswith|endswith|and|or|not|eq|ne|gt|ge|lt|le|in|IN)\b|([(),])|\'([^\']*)\'|(\d+(\.\d+)?)|([A-Za-z_][A-Za-z0-9_]*)/i';
         $lambda = '';
         $relation = '';
         // Perform global matching
@@ -344,20 +344,31 @@ trait FilterTrait
         }
 
         // Handle in operator
-        if (isset($tokens[1]) && $tokens[1] === 'in') {
+        if (isset($tokens[1]) && strtolower($tokens[1]) === 'in') {
             $column = $tokens[0];
-            $operator = OperatorUtils::mapOperator($tokens[1], $inverseOperator);
+            $operator = OperatorUtils::mapOperator($tokens[1], $inverseOperator);;
+            
             // Extract values between parentheses
             $value = [];
             $inValues = array_slice($tokens, 2);
+            
             foreach ($inValues as $token) {
-                if ($token !== '(' && $token !== ')' && $token !== ',') {
+                if ($token === '(' || $token === ')' || $token === ',') {
+                    continue;
+                }
+                // Handle both quoted and unquoted values
+                if (is_numeric($token)) {
                     $value[] = $token;
+                } else {
+                    $value[] = trim($token, "'");
                 }
             }
 
-            // Corrected logic: Check tokens[0] for function-based operators
-        } else if (in_array($tokens[0], ['contains', 'startswith', 'endswith'], true)) {
+            return [$column, $operator, $value, $lambda, $relation];
+        }
+
+        // Corrected logic: Check tokens[0] for function-based operators
+        if (in_array($tokens[0], ['contains', 'startswith', 'endswith'], true)) {
             $column = $tokens[2];
             $operator = OperatorUtils::mapOperator($tokens[0], $inverseOperator);
             $value = OperatorUtils::getValueBasedOnOperator($tokens[0], $tokens[4]);
