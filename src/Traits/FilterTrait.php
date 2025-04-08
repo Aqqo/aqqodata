@@ -6,7 +6,6 @@ use Aqqo\OData\Utils\ClassUtils;
 use Aqqo\OData\Utils\OperatorUtils;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use ReflectionClass;
 
