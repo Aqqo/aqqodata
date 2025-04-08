@@ -14,8 +14,10 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Support\Carbon;
 
-#[ODataProperty('name', searchable: true)]
+#[ODataProperty('name', searchable: true, filterable: true)]
+#[ODataProperty('id', filterable: true)]
 #[ODataProperty('description', searchable: true)]
+#[ODataProperty('cost', filterable: true)]
 #[ODataProperty('test')]
 #[ODataProperty('odatacol', source: 'dbcol')]
 #[ODataProperty('start_datetime_utc')]

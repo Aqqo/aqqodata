@@ -1,4 +1,3 @@
-
 <?php
 
 namespace Aqqo\OData\Tests\Testclasses;

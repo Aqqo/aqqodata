@@ -7,6 +7,8 @@ it('Run filter', function (?string $filter, string $result) {
     expect($query->toSql())->toEqual($result);
 })->with([
     "Without filters" => ["", 'select * from "test_models" limit 100 offset 0'],
+    "IN operator with strings" => ["name in ('Test', 'Aqqo', 'Example')", 'select * from "test_models" where "name" in (\'Test\', \'Aqqo\', \'Example\') limit 100 offset 0'],
+    "IN operator with numbers" => ["id in (1, 2, 3)", 'select * from "test_models" where "id" in (\'1\', \'2\', \'3\') limit 100 offset 0'],
     "Simple name filter" => ["name eq 'Test' and test gt 12", 'select * from "test_models" where "name" = \'Test\' and "test" > \'12\' limit 100 offset 0'],
     "Simple different source filter" => ["odatacol eq 'Test'", 'select * from "test_models" where "dbcol" = \'Test\' limit 100 offset 0'],
     "Simple contains filter" => ["contains(name, 'Test') and test gt 12", 'select * from "test_models" where (("name" LIKE \'%Test%\') and ("test" > \'12\')) limit 100 offset 0'],
