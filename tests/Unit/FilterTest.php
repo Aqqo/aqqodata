@@ -1,7 +1,5 @@
 <?php
 
-use Illuminate\Support\Facades\Log;
-
 use function Aqqo\OData\Tests\Feature\createQueryFromParams;
 
 beforeEach(function () {
