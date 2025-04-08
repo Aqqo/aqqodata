@@ -34,12 +34,17 @@ it('can filter models using in operator', function () {
 });
 
 it('can filter models using in operator on related models', function () {
-    // Create test models
+    // This test verifies that:
+    // 1. We can filter parent models based on their related models' names using the IN operator
+    // 2. The related models are properly loaded in the results
+    // 3. The relationship between parent and related models is maintained
+    
+    // Create test models - only the first one will have related models
     $testModels = \Aqqo\OData\Tests\Testclasses\TestModel::factory()
         ->count(3)
         ->create();
 
-    // Create related models for the first test model
+    // Create two related models with specific names, both associated with the first test model
     $relatedModel1 = new \Aqqo\OData\Tests\Testclasses\RelatedModel(['name' => 'Related1']);
     $relatedModel1->testModel()->associate($testModels[0]);
     $relatedModel1->save();
@@ -48,22 +53,37 @@ it('can filter models using in operator on related models', function () {
     $relatedModel2->testModel()->associate($testModels[0]);
     $relatedModel2->save();
 
-    // Filter test models where related models have these names
-    $models = createQueryFromParams(filter: "relatedModels/any(s:s/name in ('Related1', 'Related2'))")
-        ->get();
+    // Filter test models where related models have names 'Related1' or 'Related2'
+    // The expand parameter ensures the related models are included in the response
+    $models = createQueryFromParams(
+        filter: "relatedModels/any(s:s/name in ('Related1', 'Related2'))",
+        expand: "relatedModels"
+    )->get();
 
-    // We should get at least the first test model
+    // Verify we only get one model (the first one that has the related models)
     expect($models)->toHaveCount(1);
     expect($models[0]['id'])->toEqual($testModels[0]->id);
+    
+    // Verify that both related models are loaded and have the correct names
+    expect($models[0]['relatedModels'])->toHaveCount(2);
+    
+    $relatedNames = collect($models[0]['relatedModels'])->pluck('name')->all();
+    expect($relatedNames)->toContain('Related1');
+    expect($relatedNames)->toContain('Related2');
 });
 
 it('can filter models using in operator on related models with numbers', function () {
-    // Create test models
+    // This test verifies that:
+    // 1. We can filter parent models based on their related models' numeric values using the IN operator
+    // 2. The related models are properly loaded in the results
+    // 3. The relationship between parent and related models is maintained
+    
+    // Create test models - only the first one will have related models
     $testModels = \Aqqo\OData\Tests\Testclasses\TestModel::factory()
         ->count(3)
         ->create();
 
-    // Create related models for the first test model with numeric values
+    // Create two related models with specific costs, both associated with the first test model
     $relatedModel1 = new \Aqqo\OData\Tests\Testclasses\RelatedModel([
         'name' => 'Related1',
         'cost' => 100
@@ -78,11 +98,21 @@ it('can filter models using in operator on related models with numbers', functio
     $relatedModel2->testModel()->associate($testModels[0]);
     $relatedModel2->save();
 
-    // Filter test models where related models have these costs
-    $models = createQueryFromParams(filter: "relatedModels/any(s:s/cost in (100, 200))")
-        ->get();
+    // Filter test models where related models have costs of 100 or 200
+    // The expand parameter ensures the related models are included in the response
+    $models = createQueryFromParams(
+        filter: "relatedModels/any(s:s/cost in (100, 200))",
+        expand: "relatedModels"
+    )->get();
 
-    // We should get at least the first test model
+    // Verify we only get one model (the first one that has the related models)
     expect($models)->toHaveCount(1);
     expect($models[0]['id'])->toEqual($testModels[0]->id);
+    
+    // Verify that both related models are loaded and have the correct costs
+    expect($models[0]['relatedModels'])->toHaveCount(2);
+    
+    $relatedCosts = collect($models[0]['relatedModels'])->pluck('cost')->all();
+    expect($relatedCosts)->toContain(100);
+    expect($relatedCosts)->toContain(200);
 });
