@@ -25,11 +25,22 @@ it('can filter models by name not equals', function () {
 });
 
 it('can filter models using in operator', function () {
+    // This test verifies that:
+    // 1. We can filter models using the IN operator on direct model properties
+    // 2. The IN operator is case insensitive ('in' vs 'IN')
+    // 3. Multiple values can be correctly matched
+    
+    // Take the first two models' names from our test data set
     $names = $this->models->take(2)->pluck('name')->toArray();
+    
+    // Filter models where name matches either of the two names
     $models = createQueryFromParams(filter: "name in ('{$names[0]}', '{$names[1]}')")
         ->get();
 
+    // Verify we get exactly two models back
     expect($models)->toHaveCount(2);
+    
+    // Verify the returned models have the exact names we filtered for
     expect($models->pluck('name')->toArray())->toEqual($names);
 });
 
