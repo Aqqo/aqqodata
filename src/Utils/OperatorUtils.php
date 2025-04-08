@@ -18,7 +18,7 @@ class OperatorUtils
         'gt' => ['>', '<='],
         'le' => ['<=', '>'],
         'lt' => ['<', '>='],
-        'in' => ['in', 'not in'],
+        'in' => ['IN', 'NOT IN'],
         'and' => ['AND', 'OR'],
         'or' => ['OR', 'AND'],
         'not' => ['NOT', ''],  // No straightforward inverse for NOT
@@ -96,11 +96,11 @@ class OperatorUtils
             return '(' . implode(',', array_map(fn($v) => "'" . addslashes($v) . "'", $value)) . ')';
         }
 
+        $stringValue = addslashes(is_array($value) ? implode(',', $value) : (string)$value);
         if (isset(self::$operatorMap[$odataOperator][2])) {
-            $stringValue = is_array($value) ? implode(',', $value) : (string)$value;
-            return str_replace('{$value}', addslashes($stringValue), self::$operatorMap[$odataOperator][2]);
+            return str_replace('{$value}', $stringValue, self::$operatorMap[$odataOperator][2]);
         }
         
-        return addslashes(is_array($value) ? implode(',', $value) : (string)$value);
+        return $stringValue;
     }
 }
