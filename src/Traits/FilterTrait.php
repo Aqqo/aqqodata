@@ -147,8 +147,19 @@ trait FilterTrait
 
                     $builder->{$function}($expandable, function ($query) use ($column, $operator, $value) {
                         if ($column = $this->isValidFilter($column, $operator, $value, $query)) {
-                            if ($operator === 'in' && is_array($value)) {
-                                $query->whereIn($column, $value);
+                            if (strtolower($operator) === 'in') {
+                                if (is_array($value)) {
+                                    $query->whereIn($column, $value);
+                                } else {
+                                    // Extract values from the string format ('value1', 'value2')
+                                    preg_match("/\((.*?)\)/", (string)$value, $matches);
+                                    if (isset($matches[1])) {
+                                        $values = array_map(function($val) {
+                                            return trim($val, "'");
+                                        }, explode(',', $matches[1]));
+                                        $query->whereIn($column, $values);
+                                    }
+                                }
                             } else {
                                 $query->where($column, $operator, $value);
                             }
@@ -174,8 +185,19 @@ trait FilterTrait
                 }
             }
 
-            if (strtolower($operator) === 'in' && is_array($value)) {
-                $builder->{$currentStatement . 'In'}($column, $value);
+            if (strtolower($operator) === 'in') {
+                if (is_array($value)) {
+                    $builder->{$currentStatement . 'In'}($column, $value);
+                } else {
+                    // Extract values from the string format ('value1', 'value2')
+                    preg_match("/\((.*?)\)/", (string)$value, $matches);
+                    if (isset($matches[1])) {
+                        $values = array_map(function($val) {
+                            return trim($val, "'");
+                        }, explode(',', $matches[1]));
+                        $builder->{$currentStatement . 'In'}($column, $values);
+                    }
+                }
             } else {
                 $builder->{$currentStatement}($column, $operator, $value);
             }
@@ -380,7 +402,28 @@ trait FilterTrait
             }
             $column = $tokens[5];
             $operator = OperatorUtils::mapOperator($tokens[6], ($tokens[1] == 'all'));
-            $value = OperatorUtils::getValueBasedOnOperator($tokens[6], $tokens[7]);
+            
+            // Extract values for IN operator from the string
+            if (strtolower($tokens[6]) === 'in') {
+                $values = [];
+                
+                // Look for values in the remaining tokens
+                $remainingTokens = array_slice($tokens, 7);
+                foreach ($remainingTokens as $token) {
+                    if ($token !== ',' && $token !== '(' && $token !== ')') {
+                        $values[] = trim($token, "'");
+                    }
+                }
+                
+                if (!empty($values)) {
+                    $value = OperatorUtils::getValueBasedOnOperator('in', $values);
+                } else {
+                    throw new \Exception('Invalid IN operator syntax');
+                }
+            } else {
+                $value = isset($tokens[7]) ? OperatorUtils::getValueBasedOnOperator($tokens[6], $tokens[7]) : '';
+            }
+            
             $lambda = $tokens[1];
             $relation = $tokens[0];
         } else {

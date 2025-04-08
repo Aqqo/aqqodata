@@ -32,3 +32,27 @@ it('can filter models using in operator', function () {
     expect($models)->toHaveCount(2);
     expect($models->pluck('name')->toArray())->toEqual($names);
 });
+
+it('can filter models using in operator on related models', function () {
+    // Create test models
+    $testModels = \Aqqo\OData\Tests\Testclasses\TestModel::factory()
+        ->count(3)
+        ->create();
+
+    // Create related models for the first test model
+    $relatedModel1 = new \Aqqo\OData\Tests\Testclasses\RelatedModel(['name' => 'Related1']);
+    $relatedModel1->testModel()->associate($testModels[0]);
+    $relatedModel1->save();
+
+    $relatedModel2 = new \Aqqo\OData\Tests\Testclasses\RelatedModel(['name' => 'Related2']);
+    $relatedModel2->testModel()->associate($testModels[0]);
+    $relatedModel2->save();
+
+    // Filter test models where related models have these names
+    $models = createQueryFromParams(filter: "relatedModels/any(s:s/name in ('Related1', 'Related2'))")
+        ->get();
+
+    // We should get at least the first test model
+    expect($models)->toHaveCount(1);
+    expect($models[0]['id'])->toEqual($testModels[0]->id);
+});
