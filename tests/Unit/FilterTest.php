@@ -56,3 +56,33 @@ it('can filter models using in operator on related models', function () {
     expect($models)->toHaveCount(1);
     expect($models[0]['id'])->toEqual($testModels[0]->id);
 });
+
+it('can filter models using in operator on related models with numbers', function () {
+    // Create test models
+    $testModels = \Aqqo\OData\Tests\Testclasses\TestModel::factory()
+        ->count(3)
+        ->create();
+
+    // Create related models for the first test model with numeric values
+    $relatedModel1 = new \Aqqo\OData\Tests\Testclasses\RelatedModel([
+        'name' => 'Related1',
+        'cost' => 100
+    ]);
+    $relatedModel1->testModel()->associate($testModels[0]);
+    $relatedModel1->save();
+
+    $relatedModel2 = new \Aqqo\OData\Tests\Testclasses\RelatedModel([
+        'name' => 'Related2',
+        'cost' => 200
+    ]);
+    $relatedModel2->testModel()->associate($testModels[0]);
+    $relatedModel2->save();
+
+    // Filter test models where related models have these costs
+    $models = createQueryFromParams(filter: "relatedModels/any(s:s/cost in (100, 200))")
+        ->get();
+
+    // We should get at least the first test model
+    expect($models)->toHaveCount(1);
+    expect($models[0]['id'])->toEqual($testModels[0]->id);
+});
