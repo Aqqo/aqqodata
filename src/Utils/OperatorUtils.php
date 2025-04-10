@@ -83,10 +83,10 @@ class OperatorUtils
      *
      * @param string $odataOperator The OData operator
      * @param string|array<string> $value The value to process
-     * @return string The processed value
+     * @return string|array<int, string> The processed value
      * @throws \InvalidArgumentException If the operator is not found in the map
      */
-    public static function getValueBasedOnOperator(string $odataOperator, string|array $value): string
+    public static function getValueBasedOnOperator(string $odataOperator, string|array $value): string|array
     {
         if (!self::isValidOperator($odataOperator)) {
             throw new \InvalidArgumentException("Invalid operator: {$odataOperator}");
@@ -94,7 +94,7 @@ class OperatorUtils
 
         // Handle both uppercase and lowercase IN operator
         if (strtolower($odataOperator) === 'in' && is_array($value)) {
-            return '(' . implode(',', array_map(fn($v) => "'" . addslashes($v) . "'", $value)) . ')';
+            return $value;
         }
 
         $stringValue = addslashes(is_array($value) ? implode(',', $value) : (string)$value);

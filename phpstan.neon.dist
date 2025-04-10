@@ -20,5 +20,9 @@ parameters:
     ignoreErrors:
         - '#Unsafe usage of new static#'
         - '#PHPDoc tag @var#'
+        - '#Method Aqqo\\OData\\Query::for\(\) should return static\(Aqqo\\OData\\Query<TModelClass of Illuminate\\Database\\Eloquent\\Model, TRelatedModel of Illuminate\\Database\\Eloquent\\Model>\) but returns static\(Aqqo\\OData\\Query<Illuminate\\Database\\Eloquent\\Model, Illuminate\\Database\\Eloquent\\Model>\)#'
+        - '#Parameter \#1 \$builder of method Aqqo\\OData\\Query<TModelClass of Illuminate\\Database\\Eloquent\\Model,TRelatedModel of Illuminate\\Database\\Eloquent\\Model>::handleSelect\(\) expects Illuminate\\Database\\Eloquent\\Builder<TModelClass of Illuminate\\Database\\Eloquent\\Model>#'
+        - '#Parameter \#1 \$builder of method Aqqo\\OData\\Query<TModelClass of Illuminate\\Database\\Eloquent\\Model,TRelatedModel of Illuminate\\Database\\Eloquent\\Model>::handleFilter\(\) expects Illuminate\\Database\\Eloquent\\Builder<TModelClass of Illuminate\\Database\\Eloquent\\Model>#'
+        - '#Parameter \#2 \$builder of method Aqqo\\OData\\Query<TModelClass of Illuminate\\Database\\Eloquent\\Model,TRelatedModel of Illuminate\\Database\\Eloquent\\Model>::processExpandExpression\(\) expects Illuminate\\Database\\Eloquent\\Builder<TModelClass of Illuminate\\Database\\Eloquent\\Model>#'
 
 #    excludePaths:
