@@ -6,6 +6,7 @@ use Aqqo\OData\Utils\ClassUtils;
 use Aqqo\OData\Utils\OperatorUtils;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use ReflectionClass;
 
@@ -279,7 +280,13 @@ trait FilterTrait
         $reflection = new ReflectionClass($modelClass);
         $shortName = $reflection->getShortName();
 
-        return $this->isPropertyFilterable($column, $shortName);
+        $filterable = $this->isPropertyFilterable($column, $shortName);
+
+        if (is_string($filterable)) {
+            return "{$builder->getModel()->getTable()}.{$filterable}";
+        }
+
+        return $filterable;
     }
 
     /**
@@ -401,14 +408,22 @@ trait FilterTrait
                 throw new \Exception('Invalid syntax');
             }
             $column = $tokens[5];
-            $operator = OperatorUtils::mapOperator($tokens[6], ($tokens[1] == 'all'));
+
+            // Find the operator position - it could be at index 6 or 7
+            $operatorIndex = 6;
+            if (OperatorUtils::isValidOperator(strtolower($tokens[7]))) {
+                $operatorIndex = 7;
+                $column = "{$tokens[5]}.{$tokens[6]}";
+            }
+
+            $operator = OperatorUtils::mapOperator($tokens[$operatorIndex], ($tokens[1] == 'all'));
             
             // Extract values for IN operator from the string
-            if (strtolower($tokens[6]) === 'in') {
+            if (strtolower($tokens[$operatorIndex]) === 'in') {
                 $values = [];
                 
                 // Look for values in the remaining tokens
-                $remainingTokens = array_slice($tokens, 7);
+                $remainingTokens = array_slice($tokens, $operatorIndex);
                 foreach ($remainingTokens as $token) {
                     if ($token !== ',' && $token !== '(' && $token !== ')') {
                         $values[] = trim($token, "'");
@@ -421,7 +436,7 @@ trait FilterTrait
                     throw new \Exception('Invalid IN operator syntax');
                 }
             } else {
-                $value = isset($tokens[7]) ? OperatorUtils::getValueBasedOnOperator($tokens[6], $tokens[7]) : '';
+                $value = isset($tokens[$operatorIndex + 1]) ? OperatorUtils::getValueBasedOnOperator($tokens[$operatorIndex], $tokens[$operatorIndex + 1]) : '';
             }
             
             $lambda = $tokens[1];
