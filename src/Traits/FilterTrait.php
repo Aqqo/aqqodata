@@ -410,7 +410,7 @@ trait FilterTrait
 
             // Find the operator position - it could be at index 6 or 7
             $operatorIndex = 6;
-            if (OperatorUtils::isValidOperator(strtolower($tokens[7]))) {
+            if (isset($tokens[7]) && OperatorUtils::isValidOperator(strtolower($tokens[7]))) {
                 $operatorIndex = 7;
                 $column = "{$tokens[5]}.{$tokens[6]}";
             }
