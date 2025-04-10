@@ -6,7 +6,6 @@ use Aqqo\OData\Utils\ClassUtils;
 use Aqqo\OData\Utils\OperatorUtils;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use ReflectionClass;
 
@@ -331,7 +330,7 @@ trait FilterTrait
      *
      * @param string $input
      * @param bool $inverseOperator
-     * @return array<int, array<int<0, max>, string>|string>
+     * @return array{string, string, array<int, string>|string, ''|'all'|'any', string}
      * @throws \Exception
      */
     private function splitInput(string $input, bool $inverseOperator = false): array
@@ -368,7 +367,7 @@ trait FilterTrait
         $tokens = array_filter($tokens, fn($token) => $token !== null);
 
         if (count($tokens) < 3) {
-            return ['', '', ''];
+            return ['', '', '', '', ''];
         }
 
         // Handle in operator
