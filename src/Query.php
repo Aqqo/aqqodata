@@ -18,6 +18,7 @@ use Aqqo\OData\Traits\OrderByTrait;
 use Aqqo\OData\Traits\SkipTrait;
 use Aqqo\OData\Traits\TopTrait;
 use Aqqo\OData\Traits\ResponseTrait;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 /**
  * @template TModelClass of Model
@@ -182,22 +183,29 @@ class Query implements \JsonSerializable
         });
     }
 
-    /**
-     * @param Model $item
-     * @return array<string, mixed>
-     */
-    private function resolveModel(Model &$item): array
+    private function resolveModel(Model &$item, bool $ignore_selects = false): array
     {
         $attributes = [];
-        foreach ($this->selects[ClassUtils::getShortName($item)] as $odata_column => $db_column) {
-            $attributes[$odata_column] = $item->getOriginal($db_column);
+        if ($ignore_selects) {
+            $attributes = $item->getAttributes();
+        } else {
+            foreach ($this->selects[ClassUtils::getShortName($item)] ?? [] as $odata_column => $db_column) {
+                $attributes[$odata_column] = $item->getOriginal($db_column);
+            }
         }
+
         $item->setRawAttributes($attributes);
         foreach ($item->getRelations() as $key => $relation) {
             if ($relation instanceof Collection) {
                 $attributes[$key] = $this->resolveCollection($relation);
             } else if ($relation instanceof Model)  {
-                $attributes[$key] = $this->resolveModel($relation);
+                $reflectionClass = new \ReflectionClass($item);
+                $method = $reflectionClass->getMethod($key);
+                if ($method->getReturnType()->getName() == MorphTo::class) {
+                    $attributes[$key] = $this->resolveModel($relation, true);
+                } else {
+                    $attributes[$key] = $this->resolveModel($relation);
+                }
             }
         }
         return $attributes;
