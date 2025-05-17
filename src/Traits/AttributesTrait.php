@@ -105,11 +105,13 @@ trait AttributesTrait
     }
 
     /**
-     * @param string $property
-     * @param string|null $className
-     * @return string|bool
+     * Determine if the given property is filterable and return its mapped database column.
+     *
+     * @param string      $property  The OData property name.
+     * @param string|null $className Optional model class short name for context.
+     * @return string|bool           The mapped database column name or false if not filterable.
      */
-    protected function isPropertyFilterable(string $property, string|null $className = null): string|bool
+    public function isPropertyFilterable(string $property, string|null $className = null): string|bool
     {
         return $this->isProperty($this->filterables, $property, $className);
     }
@@ -153,11 +155,13 @@ trait AttributesTrait
     }
 
     /**
-     * @param string $property
-     * @param string|null $className
-     * @return false|string
+     * Determine if the given property is expandable and return the related method/source.
+     *
+     * @param string      $property  The OData property name.
+     * @param string|null $className Optional model class short name for context.
+     * @return false|string           The related method/source or false if not expandable.
      */
-    protected function isPropertyExpandable(string $property, string|null $className = null): false|string
+    public function isPropertyExpandable(string $property, string|null $className = null): false|string
     {
         // If className is not provided, get it from the subject model
         if (empty($className)) {
