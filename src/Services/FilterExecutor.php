@@ -3,19 +3,22 @@ namespace Aqqo\OData\Services;
 
 use Illuminate\Database\Eloquent\Builder;
 use Aqqo\OData\Query;
+use Aqqo\OData\Parameters\FilterParameter;
 use Aqqo\OData\Services\Expressions\ExpressionNode;
 use Aqqo\OData\Services\Expressions\LogicalExpressionNode;
 use Aqqo\OData\Services\Expressions\ComparisonExpressionNode;
 
 class FilterExecutor
 {
-    protected Query   $query;
+    protected Query $query;
     protected Builder $builder;
+    protected bool $isRoot = true;
 
-    public function __construct(Query $query, Builder $builder)
+    public function __construct(Query $query, Builder $builder, bool $isRoot = true)
     {
-        $this->query   = $query;
+        $this->query = $query;
         $this->builder = $builder;
+        $this->isRoot = $isRoot;
     }
 
     public function execute(ExpressionNode $expr, string $boolean = 'where'): void
@@ -31,46 +34,52 @@ class FilterExecutor
 
     protected function applyLogical(LogicalExpressionNode $node, string $boolean): void
     {
-        $isRoot   = $boolean === 'where';
         $children = $node->children();
+        $isOr = $node->isOr();
 
-        // 1) OR nodes: simple OR at root, nested OR groups are grouped
-        if ($node->isOr()) {
-            if ($boolean !== 'where') {
-                $this->builder->{$boolean}(function (Builder $q) use ($children) {
-                    $exec = new self($this->query, $q);
-                    foreach ($children as $i => $child) {
-                        $exec->execute($child, $i === 0 ? 'where' : 'orWhere');
-                    }
-                });
-            } else {
-                foreach ($children as $i => $child) {
-                    $this->execute($child, $i === 0 ? 'where' : 'orWhere');
-                }
-            }
+        // Handle OR nodes
+        if ($isOr) {
+            $this->applyOrNode($children, $boolean);
             return;
         }
 
-        // 2) AND nodes: flatten simple AND, group all others
-        $hasOrChild = false;
-        foreach ($children as $c) {
-            if ($c instanceof LogicalExpressionNode && $c->isOr()) {
-                $hasOrChild = true;
-                break;
+        // Handle AND nodes
+        $this->applyAndNode($children, $boolean);
+    }
+
+    protected function applyOrNode(array $children, string $boolean): void
+    {
+        if ($boolean !== 'where') {
+            $this->builder->{$boolean}(function (Builder $q) use ($children) {
+                $exec = new self($this->query, $q, false);
+                foreach ($children as $i => $child) {
+                    $exec->execute($child, $i === 0 ? 'where' : 'orWhere');
+                }
+            });
+        } else {
+            foreach ($children as $i => $child) {
+                $this->execute($child, $i === 0 ? 'where' : 'orWhere');
             }
         }
-        if ($isRoot && ! $hasOrChild && ! $this->hasLikeChild($children)) {
+    }
+
+    protected function applyAndNode(array $children, string $boolean): void
+    {
+        // Check if we can flatten the AND conditions
+        $canFlatten = $this->isRoot && !$this->hasOrChild($children) && !$this->hasLikeChild($children);
+        
+        if ($canFlatten) {
             foreach ($children as $child) {
                 $this->execute($child, 'where');
             }
             return;
         }
 
-        // 3) any other AND must be grouped; each child wrapped in its own nested where for parentheses
+        // Group AND conditions with proper parentheses
         $this->builder->{$boolean}(function (Builder $q) use ($children) {
             foreach ($children as $child) {
                 $q->where(function (Builder $inner) use ($child) {
-                    $exec = new self($this->query, $inner);
+                    $exec = new self($this->query, $inner, false);
                     $exec->execute($child, 'where');
                 });
             }
@@ -79,48 +88,52 @@ class FilterExecutor
 
     protected function applyComparison(ComparisonExpressionNode $node, string $boolean): void
     {
-        $param    = $node->parameter();
-        $relation = $param->getRelation();  // array<string> of path segments
-        $column   = $param->getColumn();    // OData property name
+        $param = $node->parameter();
+        $relation = $param->getRelation();
+        $column = $param->getColumn();
 
-        // 1) ANY/ALL relationship filters
-        if (! empty($relation)) {
-            $relName = array_shift($relation);
-            if ($this->query->isPropertyExpandable($relName) === false) {
-                // skip filters for non-expandable relations
-                return;
-            }
-            $method  = $param->getLambda() === 'all' ? 'whereDoesntHave' : 'whereHas';
-
-            $this->builder->{$method}($relName, function (Builder $q) use ($column, $param) {
-                $op    = $param->getOperator();        // already SQL (=, <>, IN, etc)
-                $value = $param->getValue();
-                $table = $q->getModel()->getTable();
-                $key   = $table . '.' . $column;
-                if (strtolower($op) === 'in') {
-                    $q->whereIn($key, (array) $value);
-                } else {
-                    $q->where($key, $op, $value);
-                }
-            });
+        if (!empty($relation)) {
+            $this->applyRelationFilter($param, $relation, $column);
             return;
         }
 
-        // 2) direct‑property filter: ask the Query if this property is filterable
+        $this->applyDirectFilter($param, $column, $boolean);
+    }
+
+    protected function applyRelationFilter(FilterParameter $param, array $relation, string $column): void
+    {
+        $relName = array_shift($relation);
+        if ($this->query->isPropertyExpandable($relName) === false) {
+            return;
+        }
+
+        $method = $param->getLambda() === 'all' ? 'whereDoesntHave' : 'whereHas';
+        $this->builder->{$method}($relName, function (Builder $q) use ($column, $param) {
+            $op = $param->getOperator();
+            $value = $param->getValue();
+            $table = $q->getModel()->getTable();
+            $key = $table . '.' . $column;
+
+            if (strtolower($op) === 'in') {
+                $q->whereIn($key, (array) $value);
+            } else {
+                $q->where($key, $op, $value);
+            }
+        });
+    }
+
+    protected function applyDirectFilter(FilterParameter $param, string $column, string $boolean): void
+    {
         $mapped = $this->query->isPropertyFilterable($column);
         if ($mapped === false) {
-            // unknown or disallowed property → silently skip
             return;
         }
 
-        // Qualify the column with the source table name
-        $table     = $this->builder->getModel()->getTable();
+        $table = $this->builder->getModel()->getTable();
         $qualified = $table . '.' . $mapped;
-
-        $op    = $param->getOperator();
+        $op = $param->getOperator();
         $value = $param->getValue();
 
-        // special‑case IN / NOT IN
         if (strtolower($op) === 'in') {
             $suffix = $param->isInverse() ? 'NotIn' : 'In';
             $method = ($boolean === 'where' ? 'where' : 'orWhere') . $suffix;
@@ -128,21 +141,24 @@ class FilterExecutor
             return;
         }
 
-        // all other operators
         $this->builder->{$boolean}($qualified, $op, $value);
     }
 
-    /**
-     * Determine if any of the comparison children use a LIKE operator,
-     * indicating function-based filters (contains, startswith, endswith).
-     *
-     * @param  ExpressionNode[]  $children
-     * @return bool
-     */
-    private function hasLikeChild(array $children): bool
+    protected function hasOrChild(array $children): bool
     {
         foreach ($children as $child) {
-            if ($child instanceof ComparisonExpressionNode && strtolower($child->parameter()->getOperator()) === 'like') {
+            if ($child instanceof LogicalExpressionNode && $child->isOr()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    protected function hasLikeChild(array $children): bool
+    {
+        foreach ($children as $child) {
+            if ($child instanceof ComparisonExpressionNode && 
+                strtolower($child->parameter()->getOperator()) === 'like') {
                 return true;
             }
         }
