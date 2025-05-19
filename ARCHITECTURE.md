@@ -1,10 +1,15 @@
 # Aqqo OData Architecture
 
-This document provides an in-depth look at the architecture and design decisions behind the Aqqo OData package.
+This document provides an in-depth look at the architecture and design decisions behind the Aqqo OData package. It serves as a guide for developers who want to understand, use, or contribute to the package.
 
 ## Overview
 
-Aqqo OData is built as a Laravel package that provides OData-compatible query building capabilities. The package is designed to be lightweight, extensible, and maintainable while following Laravel's best practices and design patterns.
+Aqqo OData is a Laravel package that provides OData-compatible query building capabilities. The package is designed to be:
+- 🚀 **Lightweight**: Minimal overhead and dependencies
+- 🔌 **Extensible**: Easy to add new features and customizations
+- 🛠️ **Maintainable**: Clear structure and comprehensive documentation
+- 🎯 **Type-Safe**: Full PHP 8 type support with generics
+- 🔒 **Secure**: Built-in security measures and best practices
 
 ## Core Components
 
@@ -13,179 +18,207 @@ Aqqo OData is built as a Laravel package that provides OData-compatible query bu
 The main entry point for building queries. It extends Laravel's Eloquent builder and provides additional functionality for OData operations.
 
 Key responsibilities:
-- Parsing request parameters
-- Building filter conditions
-- Handling relation loading
-- Managing sorting operations
+- Parsing and validating OData request parameters
+- Building and applying filter conditions
+- Managing relation loading and expansion
+- Handling sorting and pagination
+- Formatting responses according to OData specifications
 
-### 2. Filters (`src/Filters/`)
+### 2. Traits System (`src/Traits/`)
 
-The filtering system is modular and extensible, allowing for custom filter implementations.
+A collection of traits that provide modular functionality for different aspects of OData query building:
 
-Components:
-- Base filter classes
-- Operator implementations
-- Custom filter attributes
+- `SelectTrait`: Handles field selection and mapping
+- `FilterTrait`: Manages filter conditions and operators
+- `ExpandTrait`: Controls relation expansion and loading
+- `SearchTrait`: Implements search functionality
+- `SkipTrait`: Handles pagination skipping
+- `TopTrait`: Manages result limiting
+- `CountTrait`: Provides count functionality
+- `OrderByTrait`: Controls result ordering
+- `ResponseTrait`: Formats responses
+- `AttributesTrait`: Manages model attributes
 
-### 3. Expand System (`src/Expand/`)
+### 3. Utils (`src/Utils/`)
 
-Handles the loading of related models using the OData `$expand` syntax.
+Utility classes and helper functions that provide common functionality:
 
-Features:
-- Nested relation loading
-- Eager loading optimization
-- Relation validation
+- `StringUtils`: String manipulation and parsing
+- `ClassUtils`: Reflection and class handling
+- `QueryUtils`: Query building helpers
+- `ArrayUtils`: Array manipulation utilities
 
-### 4. Operations (`src/Operations/`)
+### 4. Exceptions (`src/Exceptions/`)
 
-Implements various OData operations and query modifiers.
+Custom exception classes for better error handling:
 
-Includes:
-- Filter operations
-- Sort operations
-- Select operations
-- Pagination
-
-### 5. Contracts (`src/Contracts/`)
-
-Defines interfaces and contracts that ensure consistent implementation across the package.
-
-Key contracts:
-- Filter interfaces
-- Operation interfaces
-- Builder interfaces
-
-### 6. Traits (`src/Traits/`)
-
-Provides reusable functionality that can be mixed into various classes.
-
-Common traits:
-- Query building helpers
-- Filter application
-- Relation handling
-
-### 7. Utils (`src/Utils/`)
-
-Utility classes and helper functions used throughout the package.
-
-Includes:
-- String manipulation
-- Array helpers
-- Query parameter parsing
-
-### 8. Exceptions (`src/Exceptions/`)
-
-Custom exception classes for better error handling and debugging.
-
-Types:
-- Query building exceptions
-- Validation exceptions
-- Configuration exceptions
+- `QueryException`: Query building and execution errors
+- `FilterException`: Filter-related errors
+- `ExpandException`: Relation expansion errors
+- `ValidationException`: Input validation errors
 
 ## Design Patterns
 
 ### 1. Builder Pattern
 
-The package heavily utilizes the Builder pattern through Laravel's Query Builder, extending it with OData-specific functionality.
+The package uses the Builder pattern through Laravel's Query Builder, extending it with OData-specific functionality:
 
-### 2. Strategy Pattern
+```php
+$query = Query::for(User::class)
+    ->filter(['name' => 'John'])
+    ->select(['name', 'email'])
+    ->expand(['posts'])
+    ->get();
+```
 
-Used in the filtering system to allow different filtering strategies to be applied based on the query parameters.
+### 2. Trait Pattern
 
-### 3. Factory Pattern
+Functionality is organized into traits for better code organization and reusability:
 
-Implemented for creating various query components and operations.
+```php
+class Query implements \JsonSerializable
+{
+    use SelectTrait;
+    use FilterTrait;
+    use ExpandTrait;
+    // ...
+}
+```
 
-### 4. Decorator Pattern
+### 3. Strategy Pattern
 
-Used to add OData functionality to existing Laravel query builder methods.
+Used in the filtering system to allow different filtering strategies:
+
+```php
+interface FilterStrategy
+{
+    public function apply(Builder $builder, string $value): void;
+}
+```
 
 ## Extension Points
 
 ### 1. Custom Filters
 
-Developers can create custom filters by:
-1. Implementing the appropriate filter interface
-2. Using the `Filterable` attribute
-3. Registering the filter in the service provider
+Create custom filters by implementing the filter interface:
 
-### 2. Custom Operations
+```php
+class CustomFilter implements FilterStrategy
+{
+    public function apply(Builder $builder, string $value): void
+    {
+        // Custom filter logic
+    }
+}
+```
 
-New operations can be added by:
-1. Creating a new operation class
-2. Implementing the operation interface
-3. Registering the operation in the service provider
+### 2. Custom Traits
 
-### 3. Custom Attributes
+Add new functionality by creating custom traits:
 
-The package supports custom attributes for:
-- Filter definitions
-- Operation definitions
-- Query modifications
+```php
+trait CustomTrait
+{
+    public function customFunction(): void
+    {
+        // Custom functionality
+    }
+}
+```
 
 ## Performance Considerations
 
-1. **Query Optimization**
-   - Eager loading optimization
-   - Query caching where appropriate
-   - Efficient filter application
+### 1. Query Optimization
 
-2. **Memory Management**
-   - Lazy loading of relations
-   - Efficient parameter parsing
-   - Resource cleanup
+- Eager loading optimization for relations
+- Query caching for frequently used queries
+- Efficient filter application and indexing
+- Lazy loading for large datasets
 
-3. **Database Impact**
-   - Optimized query generation
-   - Index-friendly filtering
-   - Efficient relation loading
+### 2. Memory Management
+
+- Efficient parameter parsing and validation
+- Resource cleanup after query execution
+- Memory-efficient relation loading
+- Proper use of PHP's garbage collection
+
+### 3. Database Impact
+
+- Optimized query generation
+- Index-friendly filtering
+- Efficient relation loading
+- Proper use of database transactions
 
 ## Security Considerations
 
-1. **Input Validation**
-   - Strict parameter validation
-   - SQL injection prevention
-   - Resource access control
+### 1. Input Validation
 
-2. **Query Safety**
-   - Parameter binding
-   - Query sanitization
-   - Access control
+- Strict parameter validation
+- SQL injection prevention
+- Resource access control
+- Type checking and validation
+
+### 2. Query Safety
+
+- Parameter binding for all queries
+- Query sanitization
+- Access control and authorization
+- Rate limiting support
 
 ## Testing Strategy
 
-The package uses a comprehensive testing approach:
+### 1. Unit Tests
 
-1. **Unit Tests**
-   - Individual component testing
-   - Mock-based testing
-   - Edge case coverage
+- Individual component testing
+- Mock-based testing
+- Edge case coverage
+- Type safety testing
 
-2. **Integration Tests**
-   - Query building tests
-   - Database interaction tests
-   - Real-world scenario testing
+### 2. Integration Tests
 
-3. **Performance Tests**
-   - Query execution time
-   - Memory usage
-   - Database load
+- Query building tests
+- Database interaction tests
+- Real-world scenario testing
+- Performance testing
+
+### 3. Code Quality
+
+- Static analysis with PHPStan
+- Code style checking with PHP CS Fixer
+- Documentation validation
+- Type coverage analysis
 
 ## Future Considerations
 
-1. **Planned Features**
-   - Additional OData operations
-   - Enhanced caching
-   - More filter types
+### 1. Planned Features
 
-2. **Potential Improvements**
-   - Query optimization
-   - Additional database support
-   - Enhanced documentation
+- Additional OData operations
+- Enhanced caching system
+- More filter types and operators
+- GraphQL integration
+
+### 2. Potential Improvements
+
+- Query optimization
+- Additional database support
+- Enhanced documentation
+- Performance monitoring
 
 ## Contributing
 
-When contributing to the package, please refer to:
-1. The coding standards in `CONTRIBUTING.md`
-2. The test coverage requirements
-3. The architectural guidelines in this document 
+When contributing to the package, please follow these guidelines:
+
+1. Read and follow the coding standards in `CONTRIBUTING.md`
+2. Ensure proper test coverage
+3. Follow the architectural guidelines in this document
+4. Update documentation as needed
+5. Use proper type hints and generics
+6. Follow Laravel's best practices
+
+## Support
+
+For support, please:
+1. Check the documentation
+2. Search existing issues
+3. Create a new issue if needed
+4. Contact the maintainers for critical issues 
