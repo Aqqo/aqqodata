@@ -41,30 +41,54 @@ describe('Advanced Filter Operations', function () {
     it('filters models using contains operator', function () {
         $name = $this->models->first()->name;
         $partialName = substr($name, 0, 3);
+        
+        // Count occurrences of partialName in all model names
+        $occurrenceCount = 0;
+        $this->models->each(function ($model) use ($partialName, &$occurrenceCount) {
+            $occurrenceCount += substr_count($model->name, $partialName);
+        });
+        
         $models = createQueryFromParams(filter: "contains(name, '{$partialName}')")
             ->get();
 
-        expect($models)->toHaveCount(1);
+        expect($models)->toHaveCount($occurrenceCount);
         expect($models->first()['name'])->toContain($partialName);
     });
 
     it('filters models using startswith operator', function () {
         $name = $this->models->first()->name;
         $start = substr($name, 0, 3);
+
+         // Count occurrences of partialName in all model names
+         $occurrenceCount = 0;
+         $this->models->each(function ($model) use ($start, &$occurrenceCount) {
+            if (str_starts_with($model->name, $start)) {
+                $occurrenceCount++;
+            }
+         });
+
         $models = createQueryFromParams(filter: "startswith(name, '{$start}')")
             ->get();
 
-        expect($models)->toHaveCount(1);
+        expect($models)->toHaveCount($occurrenceCount);
         expect($models->first()['name'])->toStartWith($start);
     });
 
     it('filters models using endswith operator', function () {
         $name = $this->models->first()->name;
         $end = substr($name, -3);
+
+        $occurrenceCount = 0;
+         $this->models->each(function ($model) use ($end, &$occurrenceCount) {
+            if (str_ends_with($model->name, $end)) {
+                $occurrenceCount++;
+            }
+         });
+
         $models = createQueryFromParams(filter: "endswith(name, '{$end}')")
             ->get();
 
-        expect($models)->toHaveCount(1);
+        expect($models)->toHaveCount($occurrenceCount);
         expect($models->first()['name'])->toEndWith($end);
     });
 });
