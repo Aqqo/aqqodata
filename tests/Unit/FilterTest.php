@@ -88,6 +88,12 @@ it('can filter models using in operator on related models', function () {
     $relatedModel2->testModel()->associate($testModels[0]);
     $relatedModel2->save();
 
+    $occurrenceCount = countModelsMatchingCondition($testModels, function($model) {
+        return $model->relatedModels()
+            ->whereIn('name', ['Related1', 'Related2'])
+            ->exists();
+    });
+
     // Filter test models where related models have names 'Related1' or 'Related2'
     // The expand parameter ensures the related models are included in the response
     $models = createQueryFromParams(
@@ -95,8 +101,8 @@ it('can filter models using in operator on related models', function () {
         expand: "relatedModels"
     )->get();
 
-    // Verify we only get one model (the first one that has the related models)
-    expect($models)->toHaveCount(1);
+    // Verify we get the correct number of models
+    expect($models)->toHaveCount($occurrenceCount);
     expect($models[0]['id'])->toEqual($testModels[0]->id);
     
     // Verify that both related models are loaded and have the correct names
@@ -133,6 +139,12 @@ it('can filter models using in operator on related models with numbers', functio
     $relatedModel2->testModel()->associate($testModels[0]);
     $relatedModel2->save();
 
+    $occurrenceCount = countModelsMatchingCondition($testModels, function($model) {
+        return $model->relatedModels()
+            ->whereIn('cost', [100, 200])
+            ->exists();
+    });
+
     // Filter test models where related models have costs of 100 or 200
     // The expand parameter ensures the related models are included in the response
     $models = createQueryFromParams(
@@ -140,8 +152,8 @@ it('can filter models using in operator on related models with numbers', functio
         expand: "relatedModels"
     )->get();
 
-    // Verify we only get one model (the first one that has the related models)
-    expect($models)->toHaveCount(1);
+    // Verify we get the correct number of models
+    expect($models)->toHaveCount($occurrenceCount);
     expect($models[0]['id'])->toEqual($testModels[0]->id);
     
     // Verify that both related models are loaded and have the correct costs
