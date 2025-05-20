@@ -2,25 +2,45 @@
 
 use function Aqqo\OData\Tests\Feature\createQueryFromParams;
 
+function countModelsMatchingCondition($models, $condition) {
+    $count = 0;
+    $models->each(function ($model) use ($condition, &$count) {
+        if ($condition($model)) {
+            $count++;
+        }
+    });
+    return $count;
+}
+
 beforeEach(function () {
     $this->models = \Aqqo\OData\Tests\Testclasses\TestModel::factory()->count(5)->create();
 });
 
 it('can filter models by name', function () {
     $name = $this->models->first()->name;
+
+    $occurrenceCount = countModelsMatchingCondition($this->models, function($model) use ($name) {
+        return $model->name === $name;
+    });
+
     $models = createQueryFromParams(filter: "name eq '{$name}'")
         ->get();
 
-    expect($models)->toHaveCount(1);
+    expect($models)->toHaveCount($occurrenceCount);
     expect($models->first()['name'])->toEqual($name);
 });
 
 it('can filter models by name not equals', function () {
     $name = $this->models->first()->name;
+
+    $occurrenceCount = countModelsMatchingCondition($this->models, function($model) use ($name) {
+        return $model->name !== $name;
+    });
+
     $models = createQueryFromParams(filter: "name ne '{$name}'")
         ->get();
 
-    expect($models)->toHaveCount(4);
+    expect($models)->toHaveCount($occurrenceCount);
     expect($models->first()['name'])->not()->toEqual($name);
 });
 
@@ -32,13 +52,17 @@ it('can filter models using in operator', function () {
     
     // Take the first two models' names from our test data set
     $names = $this->models->take(2)->pluck('name')->toArray();
+
+    $occurrenceCount = countModelsMatchingCondition($this->models, function($model) use ($names) {
+        return in_array($model->name, $names);
+    });
     
     // Filter models where name matches either of the two names
     $models = createQueryFromParams(filter: "name in ('{$names[0]}', '{$names[1]}')")
         ->get();
 
     // Verify we get exactly two models back
-    expect($models)->toHaveCount(2);
+    expect($models)->toHaveCount($occurrenceCount);
     
     // Verify the returned models have the exact names we filtered for
     expect($models->pluck('name')->toArray())->toEqual($names);
