@@ -255,20 +255,20 @@ it('can handle two filters with all filter but not expandable', function () {
 });
 
 // TODO uncomment below for more complex tests
-// it('can handle deeply nested AND/OR conditions', function () {
-//     $query = createQueryFromParams(filter: "((name eq 'Test' or name eq 'Aqqo') and (age gt 18 or age lt 65)) and (status eq 'active' or status eq 'pending')");
-//     expect($query->toSql())->toEqual('select * from "test_models" where (("test_models"."name" = \'Test\' or "test_models"."name" = \'Aqqo\') and ("test_models"."age" > \'18\' or "test_models"."age" < \'65\')) and ("test_models"."status" = \'active\' or "test_models"."status" = \'pending\') limit 100 offset 0');
-// });
+it('can handle deeply nested AND/OR conditions', function () {
+    $query = createQueryFromParams(filter: "((name eq 'Test' or name eq 'Aqqo') and (age gt 18 or age lt 65)) and (status eq 'active' or status eq 'pending')");
+    expect($query->toSql())->toEqual('select * from "test_models" where (("test_models"."name" = \'Test\' or "test_models"."name" = \'Aqqo\') and ("test_models"."age" > \'18\' or "test_models"."age" < \'65\')) and ("test_models"."status" = \'active\' or "test_models"."status" = \'pending\') limit 100 offset 0');
+});
 
-// it('can handle complex IN operations with multiple conditions', function () {
-//     $query = createQueryFromParams(filter: "name in ('Test', 'Aqqo') and age in (18, 21, 25) and status in ('active', 'pending')");
-//     expect($query->toSql())->toEqual('select * from "test_models" where "test_models"."name" in (\'Test\', \'Aqqo\') and "test_models"."age" in (\'18\', \'21\', \'25\') and "test_models"."status" in (\'active\', \'pending\') limit 100 offset 0');
-// });
+it('can handle complex IN operations with multiple conditions', function () {
+    $query = createQueryFromParams(filter: "name in ('Test', 'Aqqo') and age in (18, 21, 25) and status in ('active', 'pending')");
+    expect($query->toSql())->toEqual('select * from "test_models" where "test_models"."name" in (\'Test\', \'Aqqo\') and "test_models"."age" in (\'18\', \'21\', \'25\') and "test_models"."status" in (\'active\', \'pending\') limit 100 offset 0');
+});
 
-// it('can handle complex date/time comparisons', function () {
-//     $query = createQueryFromParams(filter: "created_at gt '2024-01-01T00:00:00Z' and (updated_at lt '2024-12-31T23:59:59Z' or deleted_at eq null)");
-//     expect($query->toSql())->toEqual('select * from "test_models" where "test_models"."created_at" > \'2024-01-01T00:00:00Z\' and ("test_models"."updated_at" < \'2024-12-31T23:59:59Z\' or "test_models"."deleted_at" is null) limit 100 offset 0');
-// });
+it('can handle complex date/time comparisons', function () {
+    $query = createQueryFromParams(filter: "created_at gt '2024-01-01T00:00:00Z' and (updated_at lt '2024-12-31T23:59:59Z' or deleted_at eq null)");
+    expect($query->toSql())->toEqual('select * from "test_models" where "test_models"."created_at" > \'2024-01-01T00:00:00Z\' and ("test_models"."updated_at" < \'2024-12-31T23:59:59Z\' or "test_models"."deleted_at" is null) limit 100 offset 0');
+});
 
 // it('can handle complex string operations with multiple functions', function () {
 //     $query = createQueryFromParams(filter: "contains(tolower(name), 'test') and startswith(upper(status), 'ACTIVE') and endswith(trim(description), 'end')");

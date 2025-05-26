@@ -4,9 +4,11 @@ namespace Aqqo\OData\Services;
 use Illuminate\Database\Eloquent\Builder;
 use Aqqo\OData\Query;
 use Aqqo\OData\Parameters\FilterParameter;
-use Aqqo\OData\Services\Expressions\ExpressionNode;
-use Aqqo\OData\Services\Expressions\LogicalExpressionNode;
-use Aqqo\OData\Services\Expressions\ComparisonExpressionNode;
+use Aqqo\OData\QueryNodeStructure\QueryNode;
+use Aqqo\OData\QueryNodeStructure\BasicQueryNode;
+use Aqqo\OData\QueryNodeStructure\CompositeQueryNode;
+
+use function PHPUnit\Framework\stringContains;
 
 class FilterExecutor
 {
@@ -21,133 +23,181 @@ class FilterExecutor
         $this->isRoot = $isRoot;
     }
 
-    public function execute(ExpressionNode $expr, string $boolean = 'where'): void
+    public function execute(QueryNode $expr, string $boolean = 'where'): void
     {
-        if ($expr instanceof LogicalExpressionNode) {
-            $this->applyLogical($expr, $boolean);
+        if ($expr instanceof CompositeQueryNode) {
+            // For composite nodes, we need to check if we're at root level
+            if ($this->isRoot) {
+                // At root level, execute directly without wrapping
+                $this->applyLogical($expr, $boolean);
+            } else {
+                // For nested conditions, wrap in parentheses
+                $this->builder->{$boolean}(function (Builder $q) use ($expr) {
+                    $exec = new self($this->query, $q, false);
+                    $exec->applyLogical($expr, 'where');
+                });
+            }
             return;
         }
-        if ($expr instanceof ComparisonExpressionNode) {
+        if ($expr instanceof BasicQueryNode) {
             $this->applyComparison($expr, $boolean);
         }
     }
 
-    protected function applyLogical(LogicalExpressionNode $node, string $boolean): void
+    protected function applyLogical(CompositeQueryNode $node, string $boolean): void
     {
-        $children = $node->children();
-        $isOr = $node->isOr();
+        $operator = strtolower($node->getOperator());
+        $left = $node->getLeft();
+        $right = $node->getRight();
 
-        // Handle OR nodes
-        if ($isOr) {
-            $this->applyOrNode($children, $boolean);
-            return;
+        if ($operator === 'or') {
+            $this->applyOrNode($left, $right, $boolean);
+        } else {
+            $this->applyAndNode($left, $right, $boolean);
         }
-
-        // Handle AND nodes
-        $this->applyAndNode($children, $boolean);
     }
 
-    protected function applyOrNode(array $children, string $boolean): void
+    protected function applyOrNode(QueryNode $left, QueryNode $right, string $boolean): void
     {
         if ($boolean !== 'where') {
-            $this->builder->{$boolean}(function (Builder $q) use ($children) {
+            $this->builder->{$boolean}(function (Builder $q) use ($left, $right) {
                 $exec = new self($this->query, $q, false);
-                foreach ($children as $i => $child) {
-                    $exec->execute($child, $i === 0 ? 'where' : 'orWhere');
-                }
+                $exec->execute($left, 'where');
+                $exec->execute($right, 'orWhere');
             });
         } else {
-            foreach ($children as $i => $child) {
-                $this->execute($child, $i === 0 ? 'where' : 'orWhere');
-            }
+            // Always wrap OR conditions in parentheses to maintain proper precedence
+            $this->builder->where(function (Builder $q) use ($left, $right) {
+                $exec = new self($this->query, $q, false);
+                $exec->execute($left, 'where');
+                $exec->execute($right, 'orWhere');
+            });
         }
     }
 
-    protected function applyAndNode(array $children, string $boolean): void
+    protected function applyAndNode(QueryNode $left, QueryNode $right, string $boolean): void
     {
         // Check if we can flatten the AND conditions
-        $canFlatten = $this->isRoot && !$this->hasOrChild($children) && !$this->hasLikeChild($children);
+        $canFlatten = $this->isRoot && !$this->hasOrChild([$left, $right]) && !$this->hasLikeChild([$left, $right]);
         
         if ($canFlatten) {
-            foreach ($children as $child) {
-                $this->execute($child, 'where');
-            }
+            $this->execute($left, 'where');
+            $this->execute($right, 'where');
             return;
         }
 
         // Group AND conditions with proper parentheses
-        $this->builder->{$boolean}(function (Builder $q) use ($children) {
-            foreach ($children as $child) {
-                $q->where(function (Builder $inner) use ($child) {
-                    $exec = new self($this->query, $inner, false);
-                    $exec->execute($child, 'where');
-                });
-            }
-        });
+        if (!$this->isRoot) {
+            $this->builder->{$boolean}(function (Builder $q) use ($left, $right) {
+                $exec = new self($this->query, $q, false);
+                $exec->execute($left, 'where');
+                $exec->execute($right, 'where');
+            });
+        } else {
+            // At root level, execute directly on the main builder
+            $this->execute($left, 'where');
+            $this->execute($right, 'where');
+        }
     }
 
-    protected function applyComparison(ComparisonExpressionNode $node, string $boolean): void
+    protected function applyComparison(BasicQueryNode $node, string $boolean): void
     {
-        $param = $node->parameter();
-        $relation = $param->getRelation();
-        $column = $param->getColumn();
+        $field = $node->getField();
+        $operator = $this->mapOperator($node->getOperator());
+        $value = $node->getValue();
 
-        if (!empty($relation)) {
-            $this->applyRelationFilter($param, $relation, $column);
+        // Check if this is a relationship field
+        if (str_contains($field, '/')) {
+            $parts = explode('/', $field);
+            $relation = array_shift($parts);
+            $column = implode('/', $parts);
+            $this->applyRelationFilter($relation, $column, $operator, $value);
             return;
         }
 
-        $this->applyDirectFilter($param, $column, $boolean);
+        $this->applyDirectFilter($field, $operator, $value, $boolean);
     }
 
-    protected function applyRelationFilter(FilterParameter $param, array $relation, string $column): void
+    protected function applyDirectFilter(string $field, string $operator, $value, string $boolean): void
     {
-        $relName = array_shift($relation);
-        if ($this->query->isPropertyExpandable($relName) === false) {
-            return;
-        }
-
-        $method = $param->getLambda() === 'all' ? 'whereDoesntHave' : 'whereHas';
-        $this->builder->{$method}($relName, function (Builder $q) use ($column, $param) {
-            $op = $param->getOperator();
-            $value = $param->getValue();
-            $table = $q->getModel()->getTable();
-            $key = $table . '.' . $column;
-
-            if (strtolower($op) === 'in') {
-                $q->whereIn($key, (array) $value);
-            } else {
-                $q->where($key, $op, $value);
-            }
-        });
-    }
-
-    protected function applyDirectFilter(FilterParameter $param, string $column, string $boolean): void
-    {
-        $mapped = $this->query->isPropertyFilterable($column);
+        $mapped = $this->query->isPropertyFilterable($field);
         if ($mapped === false) {
             return;
         }
 
         $table = $this->builder->getModel()->getTable();
         $qualified = $table . '.' . $mapped;
-        $op = $param->getOperator();
-        $value = $param->getValue();
 
-        if (strtolower($op) === 'in') {
-            $suffix = $param->isInverse() ? 'NotIn' : 'In';
-            $method = ($boolean === 'where' ? 'where' : 'orWhere') . $suffix;
-            $this->builder->{$method}($qualified, (array)$value);
+        if (strtolower($operator) === 'in') {
+            $method = ($boolean === 'where' ? 'where' : 'orWhere') . 'In';
+            // Format each value in the array
+            $values = array_map(function($v) {
+                return $this->formatValue($v);
+            }, (array)$value);
+            $this->builder->{$method}($qualified, $values);
             return;
         }
 
-        $this->builder->{$boolean}($qualified, $op, $value);
+        // If value is null, use the appropriate null check method
+        if ($value === "null") {
+            $method = ($boolean === 'where' ? 'where' : 'orWhere') . 'Null';
+            $this->builder->{$method}($qualified);
+            return;
+        }
+
+        $this->builder->{$boolean}($qualified, $operator, $this->formatValue($value));
+    }
+
+    protected function formatValue($value): string
+    {
+        
+        if (is_string($value) && str_contains($value, "'")) {
+            // Remove any existing quotes and trim whitespace
+            $value = trim($value, "'");
+            // Add single quotes
+            return "'" . $value . "'";
+        }
+        return (string)$value;
+    }
+
+    protected function mapOperator(string $operator): string
+    {
+        return match (strtolower($operator)) {
+            'eq' => '=',
+            'ne' => '!=',
+            'gt' => '>',
+            'ge' => '>=',
+            'lt' => '<',
+            'le' => '<=',
+            'contains' => 'like',
+            'startswith' => 'like',
+            'endswith' => 'like',
+            default => $operator
+        };
+    }
+
+    protected function applyRelationFilter(string $relation, string $column, string $operator, $value): void
+    {
+        if ($this->query->isPropertyExpandable($relation) === false) {
+            return;
+        }
+
+        $this->builder->whereHas($relation, function (Builder $q) use ($column, $operator, $value) {
+            $table = $q->getModel()->getTable();
+            $key = $table . '.' . $column;
+
+            if (strtolower($operator) === 'in') {
+                $q->whereIn($key, (array) $value);
+            } else {
+                $q->where($key, $operator, $value);
+            }
+        });
     }
 
     protected function hasOrChild(array $children): bool
     {
         foreach ($children as $child) {
-            if ($child instanceof LogicalExpressionNode && $child->isOr()) {
+            if ($child instanceof CompositeQueryNode && strtolower($child->getOperator()) === 'or') {
                 return true;
             }
         }
@@ -157,8 +207,8 @@ class FilterExecutor
     protected function hasLikeChild(array $children): bool
     {
         foreach ($children as $child) {
-            if ($child instanceof ComparisonExpressionNode && 
-                strtolower($child->parameter()->getOperator()) === 'like') {
+            if ($child instanceof BasicQueryNode && 
+                in_array(strtolower($child->getOperator()), ['contains', 'startswith', 'endswith'])) {
                 return true;
             }
         }
