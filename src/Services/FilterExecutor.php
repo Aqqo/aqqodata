@@ -26,17 +26,8 @@ class FilterExecutor
     public function execute(QueryNode $expr, string $boolean = 'where'): void
     {
         if ($expr instanceof CompositeQueryNode) {
-            // For composite nodes, we need to check if we're at root level
-            if ($this->isRoot) {
-                // At root level, execute directly without wrapping
-                $this->applyLogical($expr, $boolean);
-            } else {
-                // For nested conditions, wrap in parentheses
-                $this->builder->{$boolean}(function (Builder $q) use ($expr) {
-                    $exec = new self($this->query, $q, false);
-                    $exec->applyLogical($expr, 'where');
-                });
-            }
+            // Always delegate to applyLogical; it will decide on grouping
+            $this->applyLogical($expr, $boolean);
             return;
         }
         if ($expr instanceof BasicQueryNode) {
@@ -77,26 +68,21 @@ class FilterExecutor
 
     protected function applyAndNode(QueryNode $left, QueryNode $right, string $boolean): void
     {
-        // Check if we can flatten the AND conditions
-        $canFlatten = $this->isRoot && !$this->hasOrChild([$left, $right]) && !$this->hasLikeChild([$left, $right]);
-        
-        if ($canFlatten) {
-            $this->execute($left, 'where');
-            $this->execute($right, 'where');
-            return;
-        }
+        // Avoid wrapping ANDs unnecessarily
+        $isLeftOr = $left instanceof CompositeQueryNode && strtolower($left->getOperator()) === 'or';
+        $isRightOr = $right instanceof CompositeQueryNode && strtolower($right->getOperator()) === 'or';
 
-        // Group AND conditions with proper parentheses
-        if (!$this->isRoot) {
+        if ($isLeftOr || $isRightOr) {
+            // Needs grouping to preserve precedence
             $this->builder->{$boolean}(function (Builder $q) use ($left, $right) {
                 $exec = new self($this->query, $q, false);
                 $exec->execute($left, 'where');
                 $exec->execute($right, 'where');
             });
         } else {
-            // At root level, execute directly on the main builder
-            $this->execute($left, 'where');
-            $this->execute($right, 'where');
+            // Flat AND: no grouping needed
+            $this->execute($left, $boolean);
+            $this->execute($right, $boolean);
         }
     }
 
@@ -130,11 +116,7 @@ class FilterExecutor
 
         if (strtolower($operator) === 'in') {
             $method = ($boolean === 'where' ? 'where' : 'orWhere') . 'In';
-            // Format each value in the array
-            $values = array_map(function($v) {
-                return $this->formatValue($v);
-            }, (array)$value);
-            $this->builder->{$method}($qualified, $values);
+            $this->builder->{$method}($qualified, $this->formatInValues($value));
             return;
         }
 
@@ -145,19 +127,41 @@ class FilterExecutor
             return;
         }
 
+        if ($value === "!null") {
+            $method = ($boolean === 'where' ? 'where' : 'orWhere') . 'NotNull';
+            $this->builder->{$method}($qualified);
+            return;
+        }
+
         $this->builder->{$boolean}($qualified, $operator, $this->formatValue($value));
+    }
+
+    protected function formatInValues($value): array
+    {
+        if (is_string($value) && str_contains($value, "(") && str_contains($value, ")")) {
+            $value = trim($value, "()");
+            return array_map(function($v) {
+                $v = trim($v);
+                $v = trim($v, "'");
+                return is_numeric($v) ? (int)$v : $v;
+            }, explode(',', $value));
+        }
+        
+        return array_map(function($v) {
+            $v = trim($v, "'");
+            return is_numeric($v) ? (int)$v : $v;
+        }, (array)$value);
     }
 
     protected function formatValue($value): string
     {
-        
-        if (is_string($value) && str_contains($value, "'")) {
-            // Remove any existing quotes and trim whitespace
-            $value = trim($value, "'");
-            // Add single quotes
-            return "'" . $value . "'";
+        if (!is_string($value)) {
+            return (string)$value;
         }
-        return (string)$value;
+
+        $value = trim($value, "'");
+
+        return $value;
     }
 
     protected function mapOperator(string $operator): string
@@ -214,4 +218,8 @@ class FilterExecutor
         }
         return false;
     }
+
+    // TODO: Add support for LIKE Operators
+    // TODO: Add support for Exists operators
+    // TODO: Add support for Not Exists operators
 }

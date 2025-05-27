@@ -171,7 +171,7 @@ it('can handle IN operator with strings', function () {
 
 it('can handle IN operator with numbers', function () {
     $query = createQueryFromParams(filter: "id in (1, 2, 3)");
-    expect($query->toSql())->toEqual('select * from "test_models" where "test_models"."id" in (\'1\', \'2\', \'3\') limit 100 offset 0');
+    expect($query->toSql())->toEqual('select * from "test_models" where "test_models"."id" in (1, 2, 3) limit 100 offset 0');
 });
 
 it('can handle simple name filter', function () {
@@ -206,12 +206,12 @@ it('can handle non existing filter', function () {
 
 it('can handle two filters with OR', function () {
     $query = createQueryFromParams(filter: "name eq 'Test' or name eq 'Aqqo'");
-    expect($query->toSql())->toEqual('select * from "test_models" where "test_models"."name" = \'Test\' or "test_models"."name" = \'Aqqo\' limit 100 offset 0');
+    expect($query->toSql())->toEqual('select * from "test_models" where ("test_models"."name" = \'Test\' or "test_models"."name" = \'Aqqo\') limit 100 offset 0');
 });
 
 it('can handle grouped filter', function () {
     $query = createQueryFromParams(filter: "(start_datetime_utc gt '2024-05-13T06:00:00+00:00' or start_datetime_utc lt '2024-05-13T06:00:00+00:00') and end_datetime_utc lt '2024-05-19T15:00:00+00:00'");
-    expect($query->toSql())->toEqual('select * from "test_models" where (("test_models"."start_datetime_utc" > \'2024-05-13T06:00:00+00:00\' or "test_models"."start_datetime_utc" < \'2024-05-13T06:00:00+00:00\') and ("test_models"."end_datetime_utc" < \'2024-05-19T15:00:00+00:00\')) limit 100 offset 0');
+    expect($query->toSql())->toEqual('select * from "test_models" where (("test_models"."start_datetime_utc" > \'2024-05-13T06:00:00+00:00\' or "test_models"."start_datetime_utc" < \'2024-05-13T06:00:00+00:00\') and "test_models"."end_datetime_utc" < \'2024-05-19T15:00:00+00:00\') limit 100 offset 0');
 });
 
 it('can handle simple any filter', function () {
@@ -257,7 +257,7 @@ it('can handle two filters with all filter but not expandable', function () {
 // TODO uncomment below for more complex tests
 it('can handle deeply nested AND/OR conditions', function () {
     $query = createQueryFromParams(filter: "((name eq 'Test' or name eq 'Aqqo') and (age gt 18 or age lt 65)) and (status eq 'active' or status eq 'pending')");
-    expect($query->toSql())->toEqual('select * from "test_models" where (("test_models"."name" = \'Test\' or "test_models"."name" = \'Aqqo\') and ("test_models"."age" > \'18\' or "test_models"."age" < \'65\')) and ("test_models"."status" = \'active\' or "test_models"."status" = \'pending\') limit 100 offset 0');
+    expect($query->toSql())->toEqual('select * from "test_models" where ((("test_models"."name" = \'Test\' or "test_models"."name" = \'Aqqo\') and ("test_models"."age" > \'18\' or "test_models"."age" < \'65\')) and ("test_models"."status" = \'active\' or "test_models"."status" = \'pending\')) limit 100 offset 0');
 });
 
 it('can handle complex IN operations with multiple conditions', function () {
@@ -267,7 +267,7 @@ it('can handle complex IN operations with multiple conditions', function () {
 
 it('can handle complex date/time comparisons', function () {
     $query = createQueryFromParams(filter: "created_at gt '2024-01-01T00:00:00Z' and (updated_at lt '2024-12-31T23:59:59Z' or deleted_at eq null)");
-    expect($query->toSql())->toEqual('select * from "test_models" where "test_models"."created_at" > \'2024-01-01T00:00:00Z\' and ("test_models"."updated_at" < \'2024-12-31T23:59:59Z\' or "test_models"."deleted_at" is null) limit 100 offset 0');
+    expect($query->toSql())->toEqual('select * from "test_models" where ("test_models"."created_at" > \'2024-01-01T00:00:00Z\' and ("test_models"."updated_at" < \'2024-12-31T23:59:59Z\' or "test_models"."deleted_at" is null)) limit 100 offset 0');
 });
 
 // it('can handle complex string operations with multiple functions', function () {

@@ -19,6 +19,7 @@ use Illuminate\Support\Carbon;
 #[ODataProperty('description', searchable: true)]
 #[ODataProperty('cost', filterable: true)]
 #[ODataProperty('age', filterable: true)]
+#[ODataProperty('test', filterable: true)]
 #[ODataProperty('status', filterable: true)]
 #[ODataProperty('created_at', filterable: true)]
 #[ODataProperty('updated_at', filterable: true)]
