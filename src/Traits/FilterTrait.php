@@ -131,7 +131,7 @@ trait FilterTrait
             /**
              * @var string $column
              * @var string $operator
-             * @var string|array $value
+             * @var string|array|null $value
              * @var string $lambda
              * @var string $relation
              */
@@ -252,12 +252,12 @@ trait FilterTrait
      *
      * @param string $column
      * @param string $operator
-     * @param string|array<int<0, max>, string> $value
+     * @param string|array<int<0, max>, string>|null $value
      * @param Builder<TModelClass> $builder
      * @return bool
      * @throws \ReflectionException
      */
-    private function isValidFilter(string $column, string $operator, string|array $value, Builder $builder): string|bool
+    private function isValidFilter(string $column, string $operator, string|array|null $value, Builder $builder): string|bool
     {
         if (empty($column) || empty($operator)) {
             return false;
@@ -330,7 +330,7 @@ trait FilterTrait
      *
      * @param string $input
      * @param bool $inverseOperator
-     * @return array{string, string, array<int, string>|string, ''|'all'|'any', string}
+     * @return array{string, string, array<int, string>|string|null, ''|'all'|'any', string}
      * @throws \Exception
      */
     private function splitInput(string $input, bool $inverseOperator = false): array
