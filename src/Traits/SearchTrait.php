@@ -71,27 +71,28 @@ trait SearchTrait
             $inclusionTokens[] = $token;
         }
 
-        // Apply inclusion conditions with OR
+        // Build inclusion conditions in an AND wrapper so they're combined with existing filters using AND.
         if (!empty($inclusionTokens)) {
-            foreach ($inclusionTokens as $token) {
-                // Handle wildcard
-                if (strpos($token, '*') !== false) {
-                    $token = str_replace('*', '%', $token);
-                    $builder->orWhere(function ($subQ) use ($token) {
-                        foreach ($this->getSearchables() as $field) {
-                            $subQ->orWhere($field, 'LIKE', $token);
-                        }
-                    });
-                } else {
-                    // Exact phrase or single term
-                    $like = "%" . $token . "%";
-                    $builder->orWhere(function ($subQ) use ($like) {
-                        foreach ($this->getSearchables() as $field) {
-                            $subQ->orWhere($field, 'LIKE', $like);
-                        }
-                    });
+            $builder->where(function ($outerQ) use ($inclusionTokens) {
+                foreach ($inclusionTokens as $token) {
+                    // Handle wildcard
+                    if (strpos($token, '*') !== false) {
+                        $token = str_replace('*', '%', $token);
+                        $outerQ->orWhere(function ($subQ) use ($token) {
+                            foreach ($this->getSearchables() as $field) {
+                                $subQ->orWhere($field, 'LIKE', $token);
+                            }
+                        });
+                    } else {
+                        $like = "%" . $token . "%";
+                        $outerQ->orWhere(function ($subQ) use ($like) {
+                            foreach ($this->getSearchables() as $field) {
+                                $subQ->orWhere($field, 'LIKE', $like);
+                            }
+                        });
+                    }
                 }
-            }
+            });
         }
 
         // Apply exclusion conditions with AND
