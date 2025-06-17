@@ -71,21 +71,22 @@ trait SearchTrait
             $inclusionTokens[] = $token;
         }
 
-        // Build inclusion conditions in an AND wrapper so they're combined with existing filters using AND.
+        // Build inclusion conditions in an AND wrapper so they combine with previous filters
         if (!empty($inclusionTokens)) {
             $builder->where(function ($outerQ) use ($inclusionTokens) {
-                foreach ($inclusionTokens as $token) {
-                    // Handle wildcard
+                foreach ($inclusionTokens as $index => $token) {
+                    $method = $index === 0 ? 'where' : 'orWhere';
+
                     if (strpos($token, '*') !== false) {
                         $token = str_replace('*', '%', $token);
-                        $outerQ->orWhere(function ($subQ) use ($token) {
+                        $outerQ->{$method}(function ($subQ) use ($token) {
                             foreach ($this->getSearchables() as $field) {
                                 $subQ->orWhere($field, 'LIKE', $token);
                             }
                         });
                     } else {
                         $like = "%" . $token . "%";
-                        $outerQ->orWhere(function ($subQ) use ($like) {
+                        $outerQ->{$method}(function ($subQ) use ($like) {
                             foreach ($this->getSearchables() as $field) {
                                 $subQ->orWhere($field, 'LIKE', $like);
                             }
