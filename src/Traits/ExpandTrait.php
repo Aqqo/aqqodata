@@ -132,6 +132,9 @@ trait ExpandTrait
         } elseif (Str::startsWith(strtolower($option), '$filter=')) {
             $value = substr($option, strlen('$filter='));
             $this->handleFilter($builder, $value);
+        } elseif (Str::startsWith(strtolower($option), '$orderby=')) {
+            $value = substr($option, strlen('$orderby='));
+            $this->handleOrderBy($builder, $value);
         } elseif (Str::startsWith(strtolower($option), '$expand=')) {
             $value = substr($option, strlen('$expand='));
 
