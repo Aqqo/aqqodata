@@ -341,7 +341,7 @@ trait FilterTrait
         // 3. String literals enclosed in single quotes
         // 4. Numeric values
         // 5. Field names or identifiers
-        $pattern = '/\b(contains|startswith|endswith|and|or|not|eq|ne|gt|ge|lt|le|in)\b|([(),])|\'([^\']*)\'|(\d+(\.\d+)?)|([A-Za-z_][A-Za-z0-9_]*)/i';
+        $pattern = '/\b(contains|startswith|endswith|and|or|not|eq|ne|gt|ge|lt|le|in)\b|([(),])|\'([^\']*)\'|(-?\d+(\.\d+)?)|([A-Za-z_][A-Za-z0-9_]*)/i';
         $lambda = '';
         $relation = '';
         // Perform global matching
