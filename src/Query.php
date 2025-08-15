@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Aqqo\OData\Traits\ExpandTrait;
-use Aqqo\OData\Traits\FilterTrait;
+use Aqqo\OData\Traits\FilterTraitNew;
 use Aqqo\OData\Traits\OrderByTrait;
 use Aqqo\OData\Traits\SkipTrait;
 use Aqqo\OData\Traits\TopTrait;
@@ -28,8 +28,8 @@ class Query implements \JsonSerializable
 {
     /** @use SelectTrait<TModelClass, TRelatedModel, TModelClass, TModelClass> */
     use SelectTrait;
-    /** @use FilterTrait<TModelClass, TRelatedModel> */
-    use FilterTrait;
+    /** @use FilterTraitNew<TModelClass, TRelatedModel> */
+    use FilterTraitNew;
     /** @use ExpandTrait<TModelClass, TRelatedModel> */
     use ExpandTrait;
     /** @use SearchTrait<TModelClass, TRelatedModel> */
