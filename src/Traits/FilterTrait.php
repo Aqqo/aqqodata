@@ -339,9 +339,12 @@ trait FilterTrait
         // 1. Functions and operators
         // 2. Parentheses and commas
         // 3. String literals enclosed in single quotes
-        // 4. Numeric values
-        // 5. Field names or identifiers
-        $pattern = '/\b(contains|startswith|endswith|and|or|not|eq|ne|gt|ge|lt|le|in)\b|([(),])|\'([^\']*)\'|(\d+(\.\d+)?)|([A-Za-z_][A-Za-z0-9_]*)/i';
+        $pattern = '/\b(contains|startswith|endswith|and|or|not|eq|ne|gt|ge|lt|le|in)\b|([(),])|\'([^\']*)\''
+            // 4. Numeric or date/time (anything starting with a digit).
+            . '|(\d+[-+.:TZ0-9]*)'
+            // 5. Field names or identifiers
+            . '|([A-Za-z_][A-Za-z0-9_]*)'
+            . '/i';
         $lambda = '';
         $relation = '';
         // Perform global matching
@@ -354,12 +357,23 @@ trait FilterTrait
             } elseif (!empty($match[3])) {
                 // String literals without quotes
                 return $match[3];
-            } elseif (isset($match[4]) && is_numeric($match[4])) {
-                // Numeric values
-                return $match[4];
-            } elseif (!empty($match[6])) {
+            } elseif (!empty($match[4])) {
+                $token = $match[4];
+                // Numeric or date/time value.
+                if (preg_match('/^\d+(\.\d+)?$/', $token, $_) && is_numeric($token)) {
+                    // Numeric values
+                    return $token;
+                } else if (preg_match('/^\d+-\d+-\d+$/', $token, $_)) {
+                    // dateValue = year "-" month "-" day
+                    return $token;
+                } else if (preg_match('/^\d+-\d+-\d+T\d+:\d+(:\d+(.\d+)?)?(Z|[-+]\d+:\d+)$/', $token, $_)) {
+                    // dateTimeOffsetValue = year "-" month "-" day "T" hour ":" minute [ ":" second [ "." fractionalSeconds ] ] ( "Z" / sign hour ":" minute )
+                    return $token;
+                }
+
+            } elseif (!empty($match[5])) {
                 // Field names or identifiers
-                return $match[6];
+                return $match[5];
             }
             return null;
         }, $matches);
