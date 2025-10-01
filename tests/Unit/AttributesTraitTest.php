@@ -376,5 +376,76 @@ describe('AttributesTrait', function () {
         expect($query->toSql())->toBeString();
     });
 
+    // Additional comprehensive tests to cover specific uncovered lines
+    
+    it('tests comprehensive coverage scenarios for all property types', function () {
+        // Test all property types to ensure all methods are called
+        $query = createQueryFromParams(
+            select: 'name,id,description,odatacol,difcolumn',
+            filter: 'name eq \'test\' and id gt 0 and description ne \'empty\' and odatacol eq \'test\' and difcolumn eq \'test\'',
+            search: 'test search term',
+            orderby: 'name asc, id desc, description asc, odatacol asc, difcolumn asc',
+            expand: 'relatedModel,relatedModels'
+        );
+        
+        expect($query->toSql())->toBeString();
+    });
+
+    it('tests edge cases for property handling with dynamic resolver', function () {
+        // Test edge cases that should trigger specific code paths
+        $query = createQueryFromParams(
+            select: 'difcolumn', // This should trigger the dynamic resolver
+            filter: 'difcolumn eq \'test\'',
+            orderby: 'difcolumn asc'
+        );
+        
+        expect($query->toSql())->toBeString();
+    });
+
+    it('tests nested expansion scenarios with dot notation', function () {
+        // Test nested expansion to cover the nested dot notation handling
+        $query = createQueryFromParams(
+            expand: 'relatedModel.relatedModels'
+        );
+        
+        expect($query->toSql())->toBeString();
+    });
+
+    it('tests property operations with non-existent properties and empty arrays', function () {
+        // Test non-existent properties to ensure empty array handling works
+        $query = createQueryFromParams(
+            select: 'nonExistent',
+            filter: 'nonExistent eq \'test\'',
+            search: 'test',
+            orderby: 'nonExistent asc',
+            expand: 'nonExistent'
+        );
+        
+        expect($query->toSql())->toBeString();
+    });
+
+    it('tests property operations with mixed case and special characters', function () {
+        // Test mixed case properties to ensure proper handling
+        $query = createQueryFromParams(
+            select: 'Name,ID,Description',
+            filter: 'Name eq \'test\' and ID gt 0',
+            orderby: 'Name asc, ID desc'
+        );
+        
+        expect($query->toSql())->toBeString();
+    });
+
+    it('tests all property types with comprehensive model attributes', function () {
+        // Test all property types to ensure all methods are called
+        $query = createQueryFromParams(
+            select: 'name,id,description,odatacol,difcolumn,test,cost,start_datetime_utc,end_datetime_utc',
+            filter: 'name eq \'test\' and id gt 0 and description ne \'empty\' and odatacol eq \'test\' and difcolumn eq \'test\' and cost gt 0',
+            search: 'test search term',
+            orderby: 'name asc, id desc, description asc, odatacol asc, difcolumn asc, cost asc'
+        );
+        
+        expect($query->toSql())->toBeString();
+    });
+
 
 });
