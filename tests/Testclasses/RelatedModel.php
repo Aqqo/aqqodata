@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[ODataProperty('name')]
 #[ODataProperty('cost')]
+#[ODataProperty('status')]
 class RelatedModel extends Model
 {
     protected $guarded = [];

@@ -5,18 +5,21 @@ namespace Aqqo\OData\QueryNodeStructure;
 class BasicQueryNode extends QueryNode {
     protected string $field;
     protected string $operator;
-    protected $value;
+    protected mixed $value;
+    protected bool $negated;
 
-    public function __construct(string $field, string $operator, $value)
+    public function __construct(string $field, string $operator, mixed $value, bool $negated = false)
     {
         $this->field = $field;
         $this->operator = $operator;
         $this->value = $value;
+        $this->negated = $negated;
     }
 
     public function toString(): string
     {
-       return $this->field . ' ' . $this->operator . ' ' . $this->value;
+        $prefix = $this->negated ? 'not ' : '';
+        return $prefix . $this->field . ' ' . $this->operator . ' ' . $this->value;
     }
 
     public function getField(): string
@@ -29,9 +32,19 @@ class BasicQueryNode extends QueryNode {
         return $this->operator;
     }
 
-    public function getValue()
+    public function getValue(): mixed
     {
         return $this->value;
+    }
+
+    public function isNegated(): bool
+    {
+        return $this->negated;
+    }
+
+    public function withNegated(): self
+    {
+        return new self($this->field, $this->operator, $this->value, !$this->negated);
     }
 
     public function getLeft(): QueryNode

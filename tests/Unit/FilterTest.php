@@ -261,8 +261,8 @@ it('can handle deeply nested AND/OR conditions', function () {
 });
 
 it('can handle complex IN operations with multiple conditions', function () {
-    $query = createQueryFromParams(filter: "name in ('Test', 'Aqqo') and age in (18, 21, 25) and status in ('active', 'pending')");
-    expect($query->toSql())->toEqual('select * from "test_models" where "test_models"."name" in (\'Test\', \'Aqqo\') and "test_models"."age" in (\'18\', \'21\', \'25\') and "test_models"."status" in (\'active\', \'pending\') limit 100 offset 0');
+    $query = createQueryFromParams(filter: "(name in ('Test', 'Aqqo')) and (age in (18, 21, 25)) and (status in ('active', 'pending'))");
+    expect($query->toSql())->toEqual('select * from "test_models" where "test_models"."name" in (\'Test\', \'Aqqo\') and "test_models"."age" in (18, 21, 25) and "test_models"."status" in (\'active\', \'pending\') limit 100 offset 0');
 });
 
 it('can handle complex date/time comparisons', function () {
@@ -270,57 +270,57 @@ it('can handle complex date/time comparisons', function () {
     expect($query->toSql())->toEqual('select * from "test_models" where ("test_models"."created_at" > \'2024-01-01T00:00:00Z\' and ("test_models"."updated_at" < \'2024-12-31T23:59:59Z\' or "test_models"."deleted_at" is null)) limit 100 offset 0');
 });
 
-// it('can handle complex string operations with multiple functions', function () {
-//     $query = createQueryFromParams(filter: "contains(tolower(name), 'test') and startswith(upper(status), 'ACTIVE') and endswith(trim(description), 'end')");
-//     expect($query->toSql())->toEqual('select * from "test_models" where (LOWER("test_models"."name") LIKE \'%test%\') and (UPPER("test_models"."status") LIKE \'ACTIVE%\') and (TRIM("test_models"."description") LIKE \'%end\') limit 100 offset 0');
-// });
+it('can handle complex string operations with multiple functions', function () {
+    $query = createQueryFromParams(filter: "contains(tolower(name), 'test') and startswith(upper(status), 'ACTIVE') and endswith(trim(description), 'end')");
+    expect($query->toSql())->toEqual('select * from "test_models" where (LOWER("test_models"."name") LIKE \'%test%\') and (UPPER("test_models"."status") LIKE \'ACTIVE%\') and (TRIM("test_models"."description") LIKE \'%end\') limit 100 offset 0');
+});
 
-// it('can handle complex nested any/all conditions', function () {
-//     $query = createQueryFromParams(filter: "relatedModels/any(r:r/name eq 'Test' and r/status eq 'active') and relatedModels/all(r:r/cost gt 100 or r/cost lt 50)");
-//     expect($query->toSql())->toEqual('select * from "test_models" where exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and "related_models"."name" = \'Test\' and "related_models"."status" = \'active\') and not exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and "related_models"."cost" <= \'100\' and "related_models"."cost" >= \'50\') limit 100 offset 0');
-// });
+it('can handle complex nested any/all conditions', function () {
+    $query = createQueryFromParams(filter: "relatedModels/any(r:r/name eq 'Test' and r/status eq 'active') and relatedModels/all(r:r/cost gt 100 or r/cost lt 50)");
+    expect($query->toSql())->toEqual('select * from "test_models" where exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and "related_models"."name" = \'Test\' and "related_models"."status" = \'active\') and not exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and "related_models"."cost" <= \'100\' and "related_models"."cost" >= \'50\') limit 100 offset 0');
+});
 
-// it('can handle complex nested any/all with multiple conditions', function () {
-//     $query = createQueryFromParams(filter: "relatedModels/any(r:r/name in ('Test', 'Aqqo') and r/status eq 'active') and relatedModels/all(r:r/cost gt 100 or r/status eq 'inactive')");
-//     expect($query->toSql())->toEqual('select * from "test_models" where exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and "related_models"."name" in (\'Test\', \'Aqqo\') and "related_models"."status" = \'active\') and not exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and "related_models"."cost" <= \'100\' and "related_models"."status" != \'inactive\') limit 100 offset 0');
-// });
+it('can handle complex nested any/all with multiple conditions', function () {
+    $query = createQueryFromParams(filter: "relatedModels/any(r:r/name in ('Test', 'Aqqo') and r/status eq 'active') and relatedModels/all(r:r/cost gt 100 or r/status eq 'inactive')");
+    expect($query->toSql())->toEqual('select * from "test_models" where exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and "related_models"."name" in (\'Test\', \'Aqqo\') and "related_models"."status" = \'active\') and not exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and "related_models"."cost" <= \'100\' and "related_models"."status" != \'inactive\') limit 100 offset 0');
+});
 
-// it('can handle complex nested any/all with multiple levels', function () {
-//     $query = createQueryFromParams(filter: "relatedModels/any(r:r/name eq 'Test' and r/subModels/any(s:s/status eq 'active')) and relatedModels/all(r:r/cost gt 100 or r/subModels/all(s:s/status eq 'inactive'))");
-//     expect($query->toSql())->toEqual('select * from "test_models" where exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and "related_models"."name" = \'Test\' and exists (select * from "sub_models" where "related_models"."id" = "sub_models"."related_model_id" and "sub_models"."status" = \'active\')) and not exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and "related_models"."cost" <= \'100\' and not exists (select * from "sub_models" where "related_models"."id" = "sub_models"."related_model_id" and "sub_models"."status" = \'inactive\')) limit 100 offset 0');
-// });
+it('can handle complex nested any/all with multiple levels', function () {
+    $query = createQueryFromParams(filter: "relatedModels/any(r:r/name eq 'Test' and r/subModels/any(s:s/status eq 'active')) and relatedModels/all(r:r/cost gt 100 or r/subModels/all(s:s/status eq 'inactive'))");
+    expect($query->toSql())->toEqual('select * from "test_models" where exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and "related_models"."name" = \'Test\' and exists (select * from "sub_models" where "related_models"."id" = "sub_models"."related_model_id" and "sub_models"."status" = \'active\')) and not exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and "related_models"."cost" <= \'100\' and not exists (select * from "sub_models" where "related_models"."id" = "sub_models"."related_model_id" and "sub_models"."status" = \'inactive\')) limit 100 offset 0');
+});
 
-// it('can handle complex numeric operations', function () {
-//     $query = createQueryFromParams(filter: "(cost gt 100 and cost lt 1000) and (quantity gt 0 and quantity lt 100) and (price gt 10.50 and price lt 99.99)");
-//     expect($query->toSql())->toEqual('select * from "test_models" where ("test_models"."cost" > \'100\' and "test_models"."cost" < \'1000\') and ("test_models"."quantity" > \'0\' and "test_models"."quantity" < \'100\') and ("test_models"."price" > \'10.50\' and "test_models"."price" < \'99.99\') limit 100 offset 0');
-// });
+it('can handle complex numeric operations', function () {
+    $query = createQueryFromParams(filter: "(cost gt 100 and cost lt 1000) and (quantity gt 0 and quantity lt 100) and (price gt 10.50 and price lt 99.99)");
+    expect($query->toSql())->toEqual('select * from "test_models" where ("test_models"."cost" > \'100\' and "test_models"."cost" < \'1000\') and ("test_models"."quantity" > \'0\' and "test_models"."quantity" < \'100\') and ("test_models"."price" > \'10.50\' and "test_models"."price" < \'99.99\') limit 100 offset 0');
+});
 
-// it('can handle complex boolean operations', function () {
-//     $query = createQueryFromParams(filter: "(is_active eq true and is_verified eq true) or (is_admin eq true and is_superuser eq true)");
-//     expect($query->toSql())->toEqual('select * from "test_models" where ("test_models"."is_active" = \'1\' and "test_models"."is_verified" = \'1\') or ("test_models"."is_admin" = \'1\' and "test_models"."is_superuser" = \'1\') limit 100 offset 0');
-// });
+it('can handle complex boolean operations', function () {
+    $query = createQueryFromParams(filter: "(is_active eq true and is_verified eq true) or (is_admin eq true and is_superuser eq true)");
+    expect($query->toSql())->toEqual('select * from "test_models" where ("test_models"."is_active" = \'1\' and "test_models"."is_verified" = \'1\') or ("test_models"."is_admin" = \'1\' and "test_models"."is_superuser" = \'1\') limit 100 offset 0');
+});
 
-// it('can handle complex null checks', function () {
-//     $query = createQueryFromParams(filter: "(deleted_at eq null and updated_at ne null) or (created_at eq null and status eq 'pending')");
-//     expect($query->toSql())->toEqual('select * from "test_models" where ("test_models"."deleted_at" is null and "test_models"."updated_at" is not null) or ("test_models"."created_at" is null and "test_models"."status" = \'pending\') limit 100 offset 0');
-// });
+it('can handle complex null checks', function () {
+    $query = createQueryFromParams(filter: "(deleted_at eq null and updated_at ne null) or (created_at eq null and status eq 'pending')");
+    expect($query->toSql())->toEqual('select * from "test_models" where ("test_models"."deleted_at" is null and "test_models"."updated_at" is not null) or ("test_models"."created_at" is null and "test_models"."status" = \'pending\') limit 100 offset 0');
+});
 
-// it('can handle complex string operations with special characters', function () {
-//     $query = createQueryFromParams(filter: "contains(name, 'Test\'s') and contains(description, 'O\'Connor') and contains(tags, 'C#')");
-//     expect($query->toSql())->toEqual('select * from "test_models" where ("test_models"."name" LIKE \'%Test\\\'s%\') and ("test_models"."description" LIKE \'%O\\\'Connor%\') and ("test_models"."tags" LIKE \'%C#%\') limit 100 offset 0');
-// });
+it('can handle complex string operations with special characters', function () {
+    $query = createQueryFromParams(filter: "contains(name, 'Test\'s') and contains(description, 'O\'Connor') and contains(tags, 'C#')");
+    expect($query->toSql())->toEqual('select * from "test_models" where ("test_models"."name" LIKE \'%Test\\\'s%\') and ("test_models"."description" LIKE \'%O\\\'Connor%\') and ("test_models"."tags" LIKE \'%C#%\') limit 100 offset 0');
+});
 
-// it('can handle complex date/time operations with timezone offsets', function () {
-//     $query = createQueryFromParams(filter: "created_at gt '2024-01-01T00:00:00+00:00' and created_at lt '2024-12-31T23:59:59+00:00' and updated_at gt '2024-01-01T00:00:00-05:00'");
-//     expect($query->toSql())->toEqual('select * from "test_models" where "test_models"."created_at" > \'2024-01-01T00:00:00+00:00\' and "test_models"."created_at" < \'2024-12-31T23:59:59+00:00\' and "test_models"."updated_at" > \'2024-01-01T00:00:00-05:00\' limit 100 offset 0');
-// });
+it('can handle complex date/time operations with timezone offsets', function () {
+    $query = createQueryFromParams(filter: "created_at gt '2024-01-01T00:00:00+00:00' and created_at lt '2024-12-31T23:59:59+00:00' and updated_at gt '2024-01-01T00:00:00-05:00'");
+    expect($query->toSql())->toEqual('select * from "test_models" where "test_models"."created_at" > \'2024-01-01T00:00:00+00:00\' and "test_models"."created_at" < \'2024-12-31T23:59:59+00:00\' and "test_models"."updated_at" > \'2024-01-01T00:00:00-05:00\' limit 100 offset 0');
+});
 
-// it('can handle complex nested any/all with multiple conditions and functions', function () {
-//     $query = createQueryFromParams(filter: "relatedModels/any(r:contains(r/name, 'Test') and r/cost gt 100) and relatedModels/all(r:startswith(r/status, 'active') or r/cost lt 50)");
-//     expect($query->toSql())->toEqual('select * from "test_models" where exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and ("related_models"."name" LIKE \'%Test%\') and "related_models"."cost" > \'100\') and not exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and not (("related_models"."status" LIKE \'active%\') or "related_models"."cost" < \'50\')) limit 100 offset 0');
-// });
+it('can handle complex nested any/all with multiple conditions and functions', function () {
+    $query = createQueryFromParams(filter: "relatedModels/any(r:contains(r/name, 'Test') and r/cost gt 100) and relatedModels/all(r:startswith(r/status, 'active') or r/cost lt 50)");
+    expect($query->toSql())->toEqual('select * from "test_models" where exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and ("related_models"."name" LIKE \'%Test%\') and "related_models"."cost" > \'100\') and not exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and not (("related_models"."status" LIKE \'active%\') or "related_models"."cost" < \'50\')) limit 100 offset 0');
+});
 
-// it('can handle complex nested any/all with multiple levels and functions', function () {
-//     $query = createQueryFromParams(filter: "relatedModels/any(r:contains(r/name, 'Test') and r/subModels/any(s:startswith(s/status, 'active'))) and relatedModels/all(r:r/cost gt 100 or r/subModels/all(s:endswith(s/status, 'inactive')))");
-//     expect($query->toSql())->toEqual('select * from "test_models" where exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and ("related_models"."name" LIKE \'%Test%\') and exists (select * from "sub_models" where "related_models"."id" = "sub_models"."related_model_id" and ("sub_models"."status" LIKE \'active%\'))) and not exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and "related_models"."cost" <= \'100\' and not exists (select * from "sub_models" where "related_models"."id" = "sub_models"."related_model_id" and ("sub_models"."status" LIKE \'%inactive\'))) limit 100 offset 0');
-// });
+it('can handle complex nested any/all with multiple levels and functions', function () {
+    $query = createQueryFromParams(filter: "relatedModels/any(r:contains(r/name, 'Test') and r/subModels/any(s:startswith(s/status, 'active'))) and relatedModels/all(r:r/cost gt 100 or r/subModels/all(s:endswith(s/status, 'inactive')))");
+    expect($query->toSql())->toEqual('select * from "test_models" where exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and ("related_models"."name" LIKE \'%Test%\') and exists (select * from "sub_models" where "related_models"."id" = "sub_models"."related_model_id" and ("sub_models"."status" LIKE \'active%\'))) and not exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and "related_models"."cost" <= \'100\' and not exists (select * from "sub_models" where "related_models"."id" = "sub_models"."related_model_id" and ("sub_models"."status" LIKE \'%inactive\'))) limit 100 offset 0');
+});
