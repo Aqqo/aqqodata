@@ -13,6 +13,8 @@ class NestedRelatedModel extends Model
 {
     protected $guarded = [];
 
+    protected $table = 'sub_models';
+
     public $timestamps = false;
 
     #[ODataProperty(name: 'relatedModel')]

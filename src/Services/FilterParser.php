@@ -15,6 +15,7 @@ class FilterParser
     private array $tokens = [];
 
     private int $position = 0;
+    private string $input = '';
 
     public function parse(string $filter): QueryNode
     {
@@ -23,6 +24,7 @@ class FilterParser
             throw new \InvalidArgumentException('Filter string cannot be empty.');
         }
 
+        $this->input = $trimmed;
         $this->tokens = $this->tokenize($trimmed);
         $this->position = 0;
 
@@ -181,6 +183,9 @@ class FilterParser
             $this->position++;
             $node = $this->parseOrExpression();
             $this->expectType('paren_close');
+            if ($node instanceof CompositeQueryNode) {
+                $node = new CompositeQueryNode($node->getLeft(), $node->getOperator(), $node->getRight(), true);
+            }
             return $node;
         }
 
@@ -325,7 +330,7 @@ class FilterParser
     {
         if ($this->position < count($this->tokens)) {
             $token = $this->tokens[$this->position];
-            throw new \InvalidArgumentException(sprintf('Unexpected token "%s" at end of filter.', $token['value']));
+            throw new \InvalidArgumentException(sprintf('Unexpected token "%s" at end of filter "%s".', $token['value'], $this->input));
         }
     }
 

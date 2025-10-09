@@ -7,12 +7,14 @@ class CompositeQueryNode extends QueryNode
     protected QueryNode $left;
     protected string $operator; // 'AND', 'OR'
     protected QueryNode $right;
+    protected bool $grouped;
 
-    public function __construct(QueryNode $left, string $operator, QueryNode $right)
+    public function __construct(QueryNode $left, string $operator, QueryNode $right, bool $grouped = false)
     {
         $this->left = $left;
         $this->operator = $operator;
         $this->right = $right;
+        $this->grouped = $grouped;
     }
 
     public function toString(): string
@@ -38,5 +40,15 @@ class CompositeQueryNode extends QueryNode
     public function getChildren(): array
     {
         return [$this->left, $this->operator, $this->right];
+    }
+
+    public function isGrouped(): bool
+    {
+        return $this->grouped;
+    }
+
+    public function withGrouped(bool $grouped = true): self
+    {
+        return new self($this->left, $this->operator, $this->right, $grouped);
     }
 }

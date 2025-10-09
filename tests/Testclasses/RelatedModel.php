@@ -29,6 +29,12 @@ class RelatedModel extends Model
         return $this->hasMany(NestedRelatedModel::class);
     }
 
+    #[ODataRelationship(name: 'subModels', source: 'nestedRelatedModels')]
+    public function subModels(): HasMany
+    {
+        return $this->nestedRelatedModels();
+    }
+
     public function scopeNamed(Builder $query, string $name): Builder
     {
         return $query->where('name', $name);

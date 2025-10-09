@@ -29,7 +29,7 @@ class FilterExecutor
     public function execute(QueryNode $expr, string $boolean = 'where', bool $wrap = false): void
     {
         if ($expr instanceof CompositeQueryNode) {
-            $this->applyLogical($expr, $boolean, $wrap);
+            $this->applyLogical($expr, $boolean, $wrap || $expr->isGrouped());
             return;
         }
 
@@ -51,35 +51,57 @@ class FilterExecutor
     protected function applyLogical(CompositeQueryNode $node, string $boolean, bool $wrap): void
     {
         $operator = strtolower($node->getOperator());
-        $left = $node->getLeft();
-        $right = $node->getRight();
 
         if ($operator === 'or') {
-            $this->applyOrNode($left, $right, $boolean, $wrap);
+            $this->applyOrNode($node, $boolean, $wrap);
             return;
         }
 
-        $this->applyAndNode($left, $right, $boolean, $wrap);
+        $this->applyAndNode($node, $boolean, $wrap);
     }
 
-    protected function applyOrNode(QueryNode $left, QueryNode $right, string $boolean, bool $wrap = false): void
+    protected function applyOrNode(CompositeQueryNode $node, string $boolean, bool $wrap = false): void
     {
-        $method = $boolean === 'where' ? 'where' : $boolean;
+        $left = $node->getLeft();
+        $right = $node->getRight();
 
-        $this->builder->{$method}(function (Builder $q) use ($left, $right) {
+        if ($boolean === 'where' && !$wrap && $this->isRoot) {
+            [$leftSql, $leftBindings, $leftValid, $leftGroup] = $this->buildNodeExpression($left);
+            [$rightSql, $rightBindings, $rightValid, $rightGroup] = $this->buildNodeExpression($right);
+
+            if ($leftValid && $rightValid) {
+                $expression = '';
+                $expression .= $leftGroup ? $this->ensureWrapped($leftSql) : $leftSql;
+                $expression .= ' or ';
+                $expression .= $rightGroup ? $this->ensureWrapped($rightSql) : $rightSql;
+                $wrapExpression = !($leftGroup || $rightGroup);
+                $this->applyWrappedRaw('where', $expression, array_merge($leftBindings, $rightBindings), true, $wrapExpression);
+                return;
+            }
+
+            $this->execute($left, 'where', true);
+            $this->execute($right, 'orWhere', true);
+            return;
+        }
+
+        $method = $boolean === 'where' ? 'where' : $boolean;
+        $this->builder->{$method}(function (Builder $q) use ($left, $right, $wrap) {
             $exec = new self($this->query, $q, false, $this->lambdaAliases);
             $exec->execute($left, 'where');
             $exec->execute($right, 'orWhere');
         });
     }
 
-    protected function applyAndNode(QueryNode $left, QueryNode $right, string $boolean, bool $wrap = false): void
+    protected function applyAndNode(CompositeQueryNode $node, string $boolean, bool $wrap = false): void
     {
+        $left = $node->getLeft();
+        $right = $node->getRight();
+
         $isLeftOr = $left instanceof CompositeQueryNode && strtolower($left->getOperator()) === 'or';
         $isRightOr = $right instanceof CompositeQueryNode && strtolower($right->getOperator()) === 'or';
         $requiresMixedGrouping = $this->shouldGroupMixedOperators($left, $right);
-        $shouldGroup = $isLeftOr || $isRightOr || ($requiresMixedGrouping && $this->isRoot);
-        $childWrap = $wrap || ($requiresMixedGrouping && $this->isRoot);
+        $shouldGroup = $wrap || $isLeftOr || $isRightOr || ($requiresMixedGrouping && $this->isRoot);
+        $childWrap = $requiresMixedGrouping;
 
         if ($shouldGroup) {
             $method = $boolean === 'where' ? 'where' : $boolean;
@@ -93,8 +115,8 @@ class FilterExecutor
             return;
         }
 
-        $this->execute($left, $boolean, $childWrap);
-        $this->execute($right, $boolean, $childWrap);
+        $this->execute($left, $boolean);
+        $this->execute($right, $boolean);
     }
 
     protected function applyComparison(BasicQueryNode $node, string $boolean, bool $wrap = false): void
@@ -216,7 +238,7 @@ class FilterExecutor
         $value = $this->prepareComparisonValue($node);
 
         if (in_array($odataOperator, ['contains', 'startswith', 'endswith'], true)) {
-            $this->applyWrappedRaw($boolean, $wrappedColumn . " {$sqlOperator} ?", [$value]);
+            $this->applyWrappedRaw($boolean, $wrappedColumn . " {$sqlOperator} ?", [$value], false);
             return;
         }
 
@@ -230,7 +252,16 @@ class FilterExecutor
 
     protected function applyLambda(LambdaQueryNode $node, string $boolean): void
     {
-        $relationName = $this->resolveRelationName($node->getRelation());
+        $relation = $node->getRelation();
+        if (str_contains($relation, '/')) {
+            $segments = explode('/', $relation);
+            $first = array_shift($segments);
+            if ($first !== null && isset($this->lambdaAliases[$first])) {
+                $relation = implode('/', $segments);
+            }
+        }
+
+        $relationName = $this->resolveRelationName($relation);
         if ($relationName === null) {
             return;
         }
@@ -283,7 +314,11 @@ class FilterExecutor
 
     protected function applyNot(NotQueryNode $node, string $boolean): void
     {
-        $innerBuilder = $this->builder->newQuery();
+        $innerBuilder = $this->builder->getModel()->newQuery();
+        $query = $innerBuilder->getQuery();
+        $baseWhereCount = count($query->wheres ?? []);
+        $baseWhereBindingsCount = count($query->bindings['where'] ?? []);
+
         $innerExecutor = new self($this->query, $innerBuilder, false, $this->lambdaAliases);
         $innerExecutor->execute($node->getInner(), 'where');
 
@@ -293,12 +328,29 @@ class FilterExecutor
         }
 
         $grammar = $query->getGrammar();
+        // Trim base relation constraints
+        if ($baseWhereCount > 0 && isset($query->wheres)) {
+            $query->wheres = array_slice($query->wheres, $baseWhereCount);
+        }
+
+        if ($baseWhereBindingsCount > 0 && isset($query->bindings['where'])) {
+            $query->bindings['where'] = array_slice($query->bindings['where'], $baseWhereBindingsCount);
+        }
+
         $compiled = $grammar->compileWheres($query);
-        $compiled = preg_replace('/^where\\s+/i', '', $compiled);
+        $compiled = preg_replace('/^where\s+/i', '', $compiled) ?? '';
+        $compiled = $this->stripRedundantParentheses($compiled);
         $bindings = $query->bindings['where'] ?? [];
 
         $method = $boolean === 'where' ? 'whereRaw' : 'orWhereRaw';
-        $this->builder->{$method}('not (' . $compiled . ')', $bindings);
+        $trimmedCompiled = ltrim($compiled);
+        if (str_starts_with($trimmedCompiled, 'exists (')) {
+            $expression = 'not ' . $trimmedCompiled;
+        } else {
+            $expression = 'not (' . $trimmedCompiled . ')';
+        }
+
+        $this->builder->{$method}($expression, $bindings);
     }
 
     protected function resolveRelationName(string $relation): ?string
@@ -379,6 +431,15 @@ class FilterExecutor
         $operator = strtolower($node->getOperator());
         $normalized = $this->normalizeScalarValue($node->getValue());
 
+        if (is_string($normalized)) {
+            $lower = strtolower($normalized);
+            if ($lower === 'true') {
+                $normalized = '1';
+            } elseif ($lower === 'false') {
+                $normalized = '0';
+            }
+        }
+
         return match ($operator) {
             'contains' => '%' . $normalized . '%',
             'startswith' => $normalized . '%',
@@ -400,33 +461,38 @@ class FilterExecutor
     protected function negateNode(QueryNode $node): QueryNode
     {
         if ($node instanceof BasicQueryNode) {
-            $operator = strtolower($node->getOperator());
-            if (in_array($operator, ['contains', 'startswith', 'endswith'], true)) {
-                return new NotQueryNode($node);
-            }
-
             return $node->withNegated();
         }
 
         if ($node instanceof CompositeQueryNode) {
             $originalOperator = strtolower($node->getOperator());
 
-            if ($originalOperator === 'or') {
+            if ($originalOperator === 'or' && !$this->canDistributeNegationForOr($node)) {
                 return new NotQueryNode($node);
             }
 
             $negatedLeft = $this->negateNode($node->getLeft());
             $negatedRight = $this->negateNode($node->getRight());
+            $newOperator = $originalOperator === 'and' ? 'or' : 'and';
 
-            return new CompositeQueryNode($negatedLeft, 'or', $negatedRight);
+            return new CompositeQueryNode($negatedLeft, $newOperator, $negatedRight);
         }
 
         if ($node instanceof LambdaQueryNode) {
-            $lambda = $node->getLambda() === 'any' ? 'all' : 'any';
+            if ($node->getLambda() === 'all') {
+                return new NotQueryNode(
+                    new LambdaQueryNode(
+                        $node->getRelation(),
+                        'any',
+                        $node->getCondition(),
+                        $node->getParameter()
+                    )
+                );
+            }
 
             return new LambdaQueryNode(
                 $node->getRelation(),
-                $lambda,
+                'all',
                 $this->negateNode($node->getCondition()),
                 $node->getParameter()
             );
@@ -533,9 +599,174 @@ class FilterExecutor
         return $function . '(' . $wrapped . ')';
     }
 
-    private function applyWrappedRaw(string $boolean, string $expression, array $bindings = []): void
+    private function applyWrappedRaw(string $boolean, string $expression, array $bindings = [], bool $useBindings = true, bool $wrapExpression = true): void
     {
+        if (!$useBindings && !empty($bindings)) {
+            foreach ($bindings as $binding) {
+                $expression = preg_replace('/\?/', $this->escapeLiteral($binding), $expression, 1);
+            }
+            $bindings = [];
+        }
+
         $method = $boolean === 'where' ? 'whereRaw' : 'orWhereRaw';
-        $this->builder->{$method}('(' . $expression . ')', $bindings);
+        $final = $wrapExpression ? '(' . $expression . ')' : $expression;
+        $this->builder->{$method}($final, $bindings);
+    }
+
+    private function canDistributeNegationForOr(CompositeQueryNode $node): bool
+    {
+        return $this->isComparisonOnly($node->getLeft()) && $this->isComparisonOnly($node->getRight());
+    }
+
+    private function isComparisonOnly(QueryNode $node): bool
+    {
+        if ($node instanceof BasicQueryNode) {
+            return !in_array(strtolower($node->getOperator()), ['contains', 'startswith', 'endswith'], true);
+        }
+
+        if ($node instanceof CompositeQueryNode) {
+            return $this->isComparisonOnly($node->getLeft()) && $this->isComparisonOnly($node->getRight());
+        }
+
+        if ($node instanceof LambdaQueryNode) {
+            return true;
+        }
+
+        if ($node instanceof NotQueryNode) {
+            return $this->isComparisonOnly($node->getInner());
+        }
+
+        return false;
+    }
+
+    private function stripRedundantParentheses(string $expression): string
+    {
+        $trimmed = trim($expression);
+        while (str_starts_with($trimmed, '(') && str_ends_with($trimmed, ')')) {
+            $candidate = trim(substr($trimmed, 1, -1));
+            if ($candidate === '') {
+                break;
+            }
+
+            if (!$this->isBalancedParentheses($candidate)) {
+                break;
+            }
+
+            $trimmed = $candidate;
+        }
+
+        return $trimmed;
+    }
+
+    private function isBalancedParentheses(string $expression): bool
+    {
+        $depth = 0;
+        $length = strlen($expression);
+
+        for ($i = 0; $i < $length; $i++) {
+            $char = $expression[$i];
+            if ($char === '(') {
+                $depth++;
+            } elseif ($char === ')') {
+                $depth--;
+                if ($depth < 0) {
+                    return false;
+                }
+            }
+        }
+
+        return $depth === 0;
+    }
+
+    private function escapeLiteral(mixed $value): string
+    {
+        if (is_bool($value)) {
+            $value = $value ? '1' : '0';
+        }
+
+        if (is_null($value)) {
+            return 'null';
+        }
+
+        $stringValue = (string)$value;
+        $escaped = addslashes($stringValue);
+
+        return "'" . $escaped . "'";
+    }
+
+    /**
+     * @return array{0:string,1:array<int,mixed>,2:bool,3:bool}
+     */
+    private function buildBasicExpression(BasicQueryNode $node): array
+    {
+        [$transform, $baseField] = $this->extractTransform($node->getField());
+        if ($transform !== null) {
+            return ['', [], false, false];
+        }
+
+        $column = $this->resolveColumn($baseField);
+        if ($column === false) {
+            return ['', [], false, false];
+        }
+
+        $table = $this->builder->getModel()->getTable();
+        $qualified = $table . '.' . $column;
+        $wrapped = $this->builder->getQuery()->getGrammar()->wrap($qualified);
+
+        $odataOperator = strtolower($node->getOperator());
+        $negated = $node->isNegated();
+
+        if ($this->isNullComparison($odataOperator, $node->getValue())) {
+            $shouldBeNull = ($odataOperator === 'eq') !== $negated;
+            $sql = $wrapped . ' ' . ($shouldBeNull ? 'IS NULL' : 'IS NOT NULL');
+            return [$sql, [], true, false];
+        }
+
+        if ($odataOperator === 'in') {
+            $values = $this->formatInValues($node->getValue());
+            $placeholders = implode(', ', array_fill(0, count($values), '?'));
+            $sql = $wrapped . ' ' . ($negated ? 'NOT IN' : 'IN') . ' (' . $placeholders . ')';
+            return [$sql, $values, true, false];
+        }
+
+        $sqlOperator = $this->mapOperator($odataOperator, $negated);
+        $value = $this->prepareComparisonValue($node);
+
+        return [$wrapped . " {$sqlOperator} ?", [$value], true, false];
+    }
+
+    /**
+     * @return array{0:string,1:array<int,mixed>,2:bool,3:bool}
+     */
+    private function buildNodeExpression(QueryNode $node): array
+    {
+        if ($node instanceof BasicQueryNode) {
+            return $this->buildBasicExpression($node);
+        }
+
+        $builder = $this->builder->getModel()->newQuery();
+        $executor = new self($this->query, $builder, false, $this->lambdaAliases);
+        $executor->execute($node, 'where');
+
+        $query = $builder->getQuery();
+        if (empty($query->wheres)) {
+            return ['', [], false];
+        }
+
+        $grammar = $query->getGrammar();
+        $compiled = $grammar->compileWheres($query);
+        $compiled = preg_replace('/^where\s+/i', '', $compiled) ?? '';
+
+        return [$compiled, $query->bindings['where'] ?? [], true, true];
+    }
+
+    private function ensureWrapped(string $expression): string
+    {
+        $trimmed = trim($expression);
+        if (str_starts_with($trimmed, '(') && str_ends_with($trimmed, ')')) {
+            return $trimmed;
+        }
+
+        return '(' . $trimmed . ')';
     }
 }
