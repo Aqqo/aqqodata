@@ -26,3 +26,28 @@ it('Run filter', function (?string $filter, string $result) {
     "Two filters with all filter but inversed" => ["relatedModels/all(f:f/cost gt 10) and name eq 'Aqqo'", 'select * from "test_models" where not exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and "related_models"."cost" <= \'10\') and "test_models"."name" = \'Aqqo\' limit 100 offset 0'],
     "Two filters with all filter but not expandable" => ["nonExistingModel/all(f:f/cost gt 10) and name eq 'Aqqo'", 'select * from "test_models" where "test_models"."name" = \'Aqqo\' limit 100 offset 0'],
 ]);
+
+// See https://docs.oasis-open.org/odata/odata/v4.01/odata-v4.01-part2-url-conventions.html#sec_PrimitiveLiterals
+
+it('Handle date literals', function (?string $filter, string $result) {
+    $query = createQueryFromParams(filter: $filter);
+    expect($query->toSql())->toEqual($result);
+})->with([
+    "Date ge" => ["start_datetime_utc ge 2000-01-02", 'select * from "test_models" where "test_models"."start_datetime_utc" >= \'2000-01-02\' limit 100 offset 0'],
+    "Date lt" => ["start_datetime_utc lt 2000-01-02", 'select * from "test_models" where "test_models"."start_datetime_utc" < \'2000-01-02\' limit 100 offset 0'],
+]);
+
+it('Handle dateTimeOffset literals', function (?string $filter, string $result) {
+    $query = createQueryFromParams(filter: $filter);
+    expect($query->toSql())->toEqual($result);
+})->with([
+    "Timestamp ge" => ["start_datetime_utc ge 2000-01-02T03:04Z", 'select * from "test_models" where "test_models"."start_datetime_utc" >= \'2000-01-02T03:04Z\' limit 100 offset 0'],
+    "Timestamp lt" => ["start_datetime_utc lt 2000-01-02T03:04Z", 'select * from "test_models" where "test_models"."start_datetime_utc" < \'2000-01-02T03:04Z\' limit 100 offset 0'],
+    "Timestamp ge - timezone +00:00" => ["start_datetime_utc ge 2000-01-02T03:04+00:00", 'select * from "test_models" where "test_models"."start_datetime_utc" >= \'2000-01-02T03:04+00:00\' limit 100 offset 0'],
+    "Timestamp ge - timezone +01:00" => ["start_datetime_utc ge 2000-01-02T03:04+01:00", 'select * from "test_models" where "test_models"."start_datetime_utc" >= \'2000-01-02T03:04+01:00\' limit 100 offset 0'],
+    "Timestamp ge - incl. seconds" => ["start_datetime_utc ge 2000-01-02T03:04:05Z", 'select * from "test_models" where "test_models"."start_datetime_utc" >= \'2000-01-02T03:04:05Z\' limit 100 offset 0'],
+    "Timestamp ge - incl. microseconds" => ["start_datetime_utc ge 2000-01-02T03:04:05.125Z", 'select * from "test_models" where "test_models"."start_datetime_utc" >= \'2000-01-02T03:04:05.125Z\' limit 100 offset 0'],
+    // Same as in 'Run filter', but now as dateTimeOffset literal (instead of string)
+    "Grouped filter" => ["(start_datetime_utc gt 2024-05-13T06:00:00+00:00 or start_datetime_utc lt 2024-05-13T06:00:00+00:00) and end_datetime_utc lt 2024-05-19T15:00:00+00:00", 'select * from "test_models" where (("test_models"."start_datetime_utc" > \'2024-05-13T06:00:00+00:00\' or "test_models"."start_datetime_utc" < \'2024-05-13T06:00:00+00:00\') and "test_models"."end_datetime_utc" < \'2024-05-19T15:00:00+00:00\') limit 100 offset 0'],
+]);
+

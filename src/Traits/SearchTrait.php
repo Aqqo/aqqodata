@@ -71,27 +71,48 @@ trait SearchTrait
             $inclusionTokens[] = $token;
         }
 
-        // Apply inclusion conditions with OR
+        // Build inclusion conditions in an AND wrapper so they combine with previous filters
+        // ---------------------------------------------------------------------------------
+        // We wrap ALL inclusion tokens in one outer `where(function(){ … })` so that the
+        // predicate group is **AND-ed** with any previously-applied filter clauses coming
+        // from OData's $filter handling.  Inside that wrapper each token is OR-ed, meaning
+        // a record matches if **any** of the tokens is found in one of the searchable
+        // columns – but the whole group still respects the outer AND.
+
         if (!empty($inclusionTokens)) {
-            foreach ($inclusionTokens as $token) {
-                // Handle wildcard
-                if (strpos($token, '*') !== false) {
-                    $token = str_replace('*', '%', $token);
-                    $builder->orWhere(function ($subQ) use ($token) {
-                        foreach ($this->getSearchables() as $field) {
-                            $subQ->orWhere($field, 'LIKE', $token);
-                        }
-                    });
-                } else {
-                    // Exact phrase or single term
-                    $like = "%" . $token . "%";
-                    $builder->orWhere(function ($subQ) use ($like) {
-                        foreach ($this->getSearchables() as $field) {
-                            $subQ->orWhere($field, 'LIKE', $like);
-                        }
-                    });
+            $builder->where(function ($outerQ) use ($inclusionTokens) {
+                foreach ($inclusionTokens as $index => $token) {
+                    // For the FIRST token we start a new condition with `where`, every
+                    // subsequent token is appended with `orWhere` so the tokens are OR-ed
+                    // together inside the outer wrapper.
+                    $method = $index === 0 ? 'where' : 'orWhere';
+
+                    if (strpos($token, '*') !== false) {
+                        // Support simple wildcard searches (e.g. "han*") by converting the
+                        // asterisk to SQL's `%` wildcard. Because the token might already
+                        // contain a `%` we just perform a straight replacement.
+                        $token = str_replace('*', '%', $token);
+                        // Build `(col LIKE 'han%') OR (other_col LIKE 'han%') …` for every
+                        // searchable column, then attach that group via the chosen `$method`.
+                        $outerQ->{$method}(function ($subQ) use ($token) {
+                            foreach ($this->getSearchables() as $field) {
+                                $subQ->orWhere($field, 'LIKE', $token);
+                            }
+                        });
+                    } else {
+                        // Non-wildcard token – we search for the token **anywhere** inside
+                        // the column value by wrapping it with `%` on both sides.
+                        $like = "%" . $token . "%";
+                        // Same construction as above: OR all searchable columns for this
+                        // single token, then couple that group with `$method`.
+                        $outerQ->{$method}(function ($subQ) use ($like) {
+                            foreach ($this->getSearchables() as $field) {
+                                $subQ->orWhere($field, 'LIKE', $like);
+                            }
+                        });
+                    }
                 }
-            }
+            });
         }
 
         // Apply exclusion conditions with AND

@@ -86,7 +86,7 @@ class OperatorUtils
      * @return string|array<int, string> The processed value
      * @throws \InvalidArgumentException If the operator is not found in the map
      */
-    public static function getValueBasedOnOperator(string $odataOperator, string|array $value): string|array
+    public static function getValueBasedOnOperator(string $odataOperator, string|array|null $value): string|array|null
     {
         if (!self::isValidOperator($odataOperator)) {
             throw new \InvalidArgumentException("Invalid operator: {$odataOperator}");
@@ -97,11 +97,15 @@ class OperatorUtils
             return $value;
         }
 
+        if ($value === 'null') {
+            return null;
+        }
+
         $stringValue = addslashes(is_array($value) ? implode(',', $value) : (string)$value);
         if (isset(self::$operatorMap[$odataOperator][2])) {
             return str_replace('{$value}', $stringValue, self::$operatorMap[$odataOperator][2]);
         }
-        
+
         return $stringValue;
     }
 }

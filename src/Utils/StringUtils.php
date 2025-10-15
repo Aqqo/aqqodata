@@ -19,14 +19,60 @@ class StringUtils
      */
     public static function splitODataExpression(string $expression, string $separator = ','): array
     {
-        $results = [];
-        $current = '';
-        $depth = 0;
+        $results   = [];
+        $current   = '';
+        $depth     = 0;
+
+        // Quote-handling state
+        $inQuote   = false;   // Whether we are currently inside a quoted literal
+        $quoteChar = null;    // Which quote char opened the literal (' or ")
 
         $length = strlen($expression);
         for ($i = 0; $i < $length; $i++) {
             $char = $expression[$i];
 
+            if ($char === "'" || $char === '"') {
+                // Determine if this quote char is escaped. Two mechanisms considered:
+                //   1. A backslash before the quote (e.g. \")
+                //   2. The OData style doubled quote inside a literal (e.g. '' inside 'don''t')
+
+                $isEscapedByBackslash = $i > 0 && $expression[$i - 1] === '\\';
+
+                if ($inQuote) {
+                    if ($char === $quoteChar && ! $isEscapedByBackslash) {
+                        // Check for doubled quote escaping within OData literals.
+                        if ($i + 1 < $length && $expression[$i + 1] === $quoteChar) {
+                            // It's an escaped quote – keep both quotes to preserve the literal.
+                            $current .= $char . $quoteChar;
+                            $i++; // Skip the second quote in the pair
+                            continue;
+                        }
+
+                        // Otherwise this is the closing quote of the literal
+                        $inQuote   = false;
+                        $quoteChar = null;
+                    }
+                } else {
+                    if (! $isEscapedByBackslash) {
+                        // Opening a new quoted literal
+                        $inQuote   = true;
+                        $quoteChar = $char;
+                    }
+                }
+
+                // In all cases, include the quote character in the token
+                $current .= $char;
+                continue;
+            }
+
+            // While inside a quoted literal treat every character as data – parentheses and
+            // separators included – and move on.
+            if ($inQuote) {
+                $current .= $char;
+                continue;
+            }
+
+            // Structural parentheses tracking (only when *not* inside quotes)
             if ($char === '(') {
                 $depth++;
             } elseif ($char === ')') {
@@ -37,12 +83,18 @@ class StringUtils
                 throw new \InvalidArgumentException('Unbalanced parentheses in OData expression');
             }
 
+            // Split at the top-level separator (outside parentheses & quotes)
             if ($char === $separator && $depth === 0) {
                 $results[] = $current;
-                $current = '';
+                $current   = '';
             } else {
                 $current .= $char;
             }
+        }
+
+        if ($inQuote) {
+            // A quote was opened but never closed.
+            throw new \InvalidArgumentException('Unbalanced quotes in OData expression');
         }
 
         if ($depth !== 0) {

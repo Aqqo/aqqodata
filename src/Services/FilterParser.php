@@ -10,6 +10,18 @@ use Aqqo\OData\QueryNodeStructure\QueryNode;
 class FilterParser
 {
     /**
+     * @var array<int, string>
+     */
+    private const KEYWORDS = [
+        'and', 'or', 'not',
+        'eq', 'ne', 'gt', 'ge', 'lt', 'le', 'in',
+        'any', 'all',
+        'contains', 'startswith', 'endswith',
+        'tolower', 'toupper', 'lower', 'upper', 'trim',
+        'null', 'true', 'false',
+    ];
+
+    /**
      * @var array<int, array{type:string,value:string}>
      */
     private array $tokens = [];
@@ -39,16 +51,20 @@ class FilterParser
      */
     private function tokenize(string $input): array
     {
-        $length = strlen($input);
+        $length = mb_strlen($input, 'UTF-8');
         $tokens = [];
         $i = 0;
 
         while ($i < $length) {
-            $char = $input[$i];
+            $char = mb_substr($input, $i, 1, 'UTF-8');
 
-            if (ctype_space($char)) {
+            if (preg_match('/\s/u', $char)) {
                 $i++;
                 continue;
+            }
+
+            if ($char === ';') {
+                break;
             }
 
             if ($char === '(') {
@@ -85,9 +101,9 @@ class FilterParser
                 $i++;
                 $value = '';
                 while ($i < $length) {
-                    $current = $input[$i];
+                    $current = mb_substr($input, $i, 1, 'UTF-8');
                     if ($current === '\\' && $i + 1 < $length) {
-                        $next = $input[$i + 1];
+                        $next = mb_substr($input, $i + 1, 1, 'UTF-8');
                         if ($next === '\'' || $next === '\\') {
                             $value .= $next;
                             $i += 2;
@@ -108,37 +124,29 @@ class FilterParser
                 continue;
             }
 
-            if ($char === '-' || ctype_digit($char)) {
-                $start = $i;
-                $i++;
-                while ($i < $length && (ctype_digit($input[$i]) || $input[$i] === '.')) {
-                    $i++;
-                }
-                $tokens[] = ['type' => 'number', 'value' => substr($input, $start, $i - $start)];
+            $remaining = mb_substr($input, $i, null, 'UTF-8');
+
+            if (preg_match('/^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?(?:Z|[+\-]\d{2}:\d{2})?)?/u', $remaining, $match) && $match[0] !== '') {
+                $tokens[] = ['type' => 'literal', 'value' => $match[0]];
+                $i += mb_strlen($match[0], 'UTF-8');
                 continue;
             }
 
-            if (ctype_alpha($char) || $char === '_') {
-                $start = $i;
-                $i++;
-                while ($i < $length && (ctype_alnum($input[$i]) || $input[$i] === '_' )) {
-                    $i++;
-                }
-                $word = substr($input, $start, $i - $start);
-                $lower = strtolower($word);
-                $keywords = [
-                    'and', 'or', 'not',
-                    'eq', 'ne', 'gt', 'ge', 'lt', 'le', 'in',
-                    'any', 'all',
-                    'contains', 'startswith', 'endswith',
-                    'tolower', 'toupper', 'lower', 'upper', 'trim',
-                    'null', 'true', 'false',
-                ];
-                if (in_array($lower, $keywords, true)) {
+            if (preg_match('/^[-+]?\d+(?:\.\d+)?/u', $remaining, $match) && $match[0] !== '') {
+                $tokens[] = ['type' => 'number', 'value' => $match[0]];
+                $i += mb_strlen($match[0], 'UTF-8');
+                continue;
+            }
+
+            if (preg_match('/^[_\p{L}][_\p{L}\p{N}]*/u', $remaining, $match) && $match[0] !== '') {
+                $word = $match[0];
+                $lower = mb_strtolower($word, 'UTF-8');
+                if (in_array($lower, self::KEYWORDS, true)) {
                     $tokens[] = ['type' => 'keyword', 'value' => $lower];
                 } else {
                     $tokens[] = ['type' => 'identifier', 'value' => $word];
                 }
+                $i += mb_strlen($word, 'UTF-8');
                 continue;
             }
 
@@ -274,6 +282,11 @@ class FilterParser
         }
 
         if (in_array($token['type'], ['string', 'number'], true)) {
+            $this->position++;
+            return $token['value'];
+        }
+
+        if ($token['type'] === 'literal') {
             $this->position++;
             return $token['value'];
         }
