@@ -208,7 +208,7 @@ describe('SelectTrait', function () {
             expect($builder->getQuery()->columns)->toContain('test_models.id');
         });
 
-        it('handles BelongsTo relationships without adding selects', function () {
+        it('adds foreign key for BelongsTo relationships', function () {
             $query = Query::for(RelatedModel::class);
             $builder = RelatedModel::query();
             
@@ -218,11 +218,11 @@ describe('SelectTrait', function () {
             // Test with a BelongsTo relationship that exists on the model
             $query->addSelectForExpand($builder, 'testModel');
             
-            // Should not add any additional selects for BelongsTo (TODO case)
-            expect($builder->getQuery()->columns)->toBe(['*']);
+            // Should include the foreign key required to hydrate the BelongsTo relation
+            expect($builder->getQuery()->columns)->toContain('related_models.test_model_id');
         });
 
-        it('handles BelongsToMany relationships without adding selects', function () {
+        it('adds local key for BelongsToMany relationships', function () {
             $query = Query::for(TestModel::class);
             $builder = TestModel::query();
             
@@ -231,8 +231,8 @@ describe('SelectTrait', function () {
             
             $query->addSelectForExpand($builder, 'relatedThroughPivotModels');
             
-            // Should not add any additional selects for BelongsToMany (TODO case)
-            expect($builder->getQuery()->columns)->toBe(['*']);
+            // Should add the local key to the select for BelongsToMany relationships
+            expect($builder->getQuery()->columns)->toContain('test_models.id');
         });
 
         it('handles non-existent relationships gracefully', function () {

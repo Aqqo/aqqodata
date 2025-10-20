@@ -200,11 +200,19 @@ class Query implements \JsonSerializable
                 $attributes[$key] = $this->resolveCollection($relation);
             } else if ($relation instanceof Model)  {
                 $reflectionClass = new \ReflectionClass($item);
-                $method = $reflectionClass->getMethod($key);
-                if ($method->getReturnType()->getName() == MorphTo::class) {
-                    $attributes[$key] = $this->resolveModel($relation, true);
+
+                if ($reflectionClass->hasMethod($key)) {
+                    $method = $reflectionClass->getMethod($key);
+                    $returnType = $method->getReturnType();
+
+                    if ($returnType && $returnType->getName() == MorphTo::class) {
+                        $attributes[$key] = $this->resolveModel($relation, true);
+                    } else {
+                        $attributes[$key] = $this->resolveModel($relation);
+                    }
                 } else {
-                    $attributes[$key] = $this->resolveModel($relation);
+                    // Handle relations like BelongsToMany pivot without defined accessors on the model.
+                    $attributes[$key] = $this->resolveModel($relation, true);
                 }
             }
         }
