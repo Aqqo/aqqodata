@@ -50,6 +50,7 @@ class TestModel extends Model
         return $this->hasMany(RelatedModel::class);
     }
 
+    #[ODataRelationship(name: 'relatedThroughPivotModels')]
     public function relatedThroughPivotModels(): BelongsToMany
     {
         return $this->belongsToMany(RelatedThroughPivotModel::class, 'pivot_models');

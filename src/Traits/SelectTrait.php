@@ -76,11 +76,19 @@ trait SelectTrait
             $relationshipBinding = $parent->getRelation($relation);
 
             if ($relationshipBinding instanceof HasOneOrMany || $relationshipBinding instanceof HasOneOrManyThrough) {
-                $parent->addSelect("{$parent->getModel()->getTable()}.{$relationshipBinding->getLocalKeyName()}");
+                $parent->addSelect($parent->qualifyColumn($relationshipBinding->getLocalKeyName()));
             }
 
             if ($relationshipBinding instanceof BelongsTo || $relationshipBinding instanceof BelongsToMany) {
-                // TODO
+                if ($relationshipBinding instanceof BelongsTo) {
+                    $foreignKey = $relationshipBinding->getForeignKeyName();
+                    $parent->addSelect($parent->qualifyColumn($foreignKey));
+                }
+
+                if ($relationshipBinding instanceof BelongsToMany) {
+                    $parentKeyName = $relationshipBinding->getParentKeyName();
+                    $parent->addSelect($parent->qualifyColumn($parentKeyName));
+                }
             }
         }
     }
