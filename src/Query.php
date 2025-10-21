@@ -190,7 +190,7 @@ class Query implements \JsonSerializable
             $attributes = $item->getAttributes();
         } else {
             foreach ($this->selects[ClassUtils::getShortName($item)] ?? [] as $odata_column => $db_column) {
-                $attributes[$odata_column] = $item->getOriginal($db_column);
+                $attributes[$odata_column] = $item->getAttribute($db_column);
             }
         }
 
