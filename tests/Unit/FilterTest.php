@@ -230,7 +230,7 @@ it('can handle empty value for non-IN operators', function () {
 
 it('can handle zero value for non-IN operators', function () {
     $models = createQueryFromParams(filter: "id eq 0")->get();
-    expect($models)->toHaveCount(5); // Zero value should return all results
+    expect($models)->toHaveCount(0); // Zero value should return no results
 });
 
 it('can handle non-filterable properties', function () {

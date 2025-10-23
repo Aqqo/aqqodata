@@ -357,7 +357,8 @@ trait FilterTrait
             } elseif (!empty($match[3])) {
                 // String literals without quotes
                 return $match[3];
-            } elseif (!empty($match[4])) {
+            } elseif (($match[4] ?? '') !== '') {
+                // Dont't use empty here because empty('0') = true!
                 $token = $match[4];
                 // Numeric or date/time value.
                 if (preg_match('/^\d+(\.\d+)?$/', $token, $_) && is_numeric($token)) {
