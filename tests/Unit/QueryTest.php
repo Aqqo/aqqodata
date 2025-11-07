@@ -3,6 +3,8 @@
 namespace Aqqo\OData\Tests\Unit;
 
 use Aqqo\OData\Query;
+use Aqqo\OData\Tests\Testclasses\AliasedModel;
+use Aqqo\OData\Tests\Testclasses\MorphModel;
 use Aqqo\OData\Tests\Testclasses\TestModel;
 use Illuminate\Http\Request;
 
@@ -132,6 +134,43 @@ describe('Query', function () {
         expect($results)->toHaveCount(3);
         expect($results->first())->toHaveKey('name');
         expect($results->first())->toHaveKey('id');
+    });
+
+    it('uses getOriginal to return aliased source values', function () {
+        AliasedModel::create([
+            'name' => 'Alice',
+            'full_name' => 'Alice Example',
+        ]);
+
+        $request = new Request(['$select' => 'display_name']);
+        $results = Query::for(AliasedModel::class, $request)->get();
+        $first = $results->first();
+
+        expect($first)->toBeArray();
+        expect($first['display_name'])->toBe('ALICE EXAMPLE');
+        expect($first)->not()->toHaveKey('full_name');
+    });
+
+    it('uses getAttributes when selects are ignored for relations', function () {
+        $parent = AliasedModel::create([
+            'name' => 'Bob',
+            'full_name' => 'Bob Example',
+        ]);
+
+        MorphModel::create([
+            'name' => 'Morph record',
+            'parent_type' => AliasedModel::class,
+            'parent_id' => $parent->id,
+        ]);
+
+        $request = new Request(['$expand' => 'parent']);
+        $results = Query::for(MorphModel::class, $request)->get();
+        $parentAttributes = $results->first()['parent'];
+
+        expect($parentAttributes)->toBeArray();
+        expect($parentAttributes)->toHaveKey('full_name');
+        expect($parentAttributes['full_name'])->toBe('Bob Example');
+        expect($parentAttributes)->not()->toHaveKey('display_name');
     });
 
     it('handles queries with ordering', function () {
