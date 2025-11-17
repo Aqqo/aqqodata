@@ -15,6 +15,9 @@ trait AttributesTrait
     private $selectables = [];
 
     /** @var array<string, array<string, string>> */
+    private $defaultSelectables = [];
+
+    /** @var array<string, array<string, string>> */
     private $filterables = [];
 
     /** @var array<string, array<string, string>> */
@@ -62,6 +65,10 @@ trait AttributesTrait
 
             if ($instance->isSelectable()) {
                 $this->selectables[$shortName][$odata_column] = $db_column;
+                
+                if ($instance->isDefaultSelectable()) {
+                    $this->defaultSelectables[$shortName][$odata_column] = $db_column;
+                }
             }
 
             if ($instance->isFilterable()) {
