@@ -127,15 +127,7 @@ class FilterExecutor
             $segments = explode('/', $field);
             $first = array_shift($segments);
 
-            if ($first === null) {
-                return;
-            }
-
             if (isset($this->lambdaAliases[$first])) {
-                if (empty($segments)) {
-                    return;
-                }
-
                 $strippedField = implode('/', $segments);
                 $newField = $this->applyTransform($transform, $strippedField);
                 $this->applyComparison(new BasicQueryNode($newField, $node->getOperator(), $node->getValue(), $node->isNegated()), $boolean, $wrap);
@@ -160,19 +152,6 @@ class FilterExecutor
         }
 
         $method = $boolean === 'where' ? 'whereHas' : 'orWhereHas';
-        if (!method_exists($this->builder, $method)) {
-            // Fallback for builders without dynamic orWhereHas helpers
-            $fallback = $boolean === 'where' ? 'where' : 'orWhere';
-            $this->builder->{$fallback}(function (Builder $q) use ($relationName, $node, $wrap) {
-                $q->whereHas($relationName, function (Builder $nested) use ($node, $wrap) {
-                    $exec = new self($this->query, $nested, false, $this->lambdaAliases);
-                    $inner = new BasicQueryNode($node->getField(), $node->getOperator(), $node->getValue(), $node->isNegated());
-                    $exec->applyComparison($inner, 'where', $wrap);
-                });
-            });
-
-            return;
-        }
 
         $this->builder->{$method}($relationName, function (Builder $q) use ($node, $wrap) {
             $exec = new self($this->query, $q, false, $this->lambdaAliases);
@@ -284,17 +263,6 @@ class FilterExecutor
 
         if ($node->getLambda() === 'any') {
             $method = $boolean === 'where' ? 'whereHas' : 'orWhereHas';
-            if (!method_exists($this->builder, $method)) {
-                $fallback = $boolean === 'where' ? 'where' : 'orWhere';
-                $this->builder->{$fallback}(function (Builder $q) use ($relationName, $node, $aliases) {
-                    $q->whereHas($relationName, function (Builder $subQuery) use ($node, $aliases) {
-                        $exec = new self($this->query, $subQuery, false, $aliases);
-                        $exec->execute($node->getCondition(), 'where');
-                    });
-                });
-
-                return;
-            }
 
             $this->builder->{$method}($relationName, function (Builder $subQuery) use ($node, $aliases) {
                 $exec = new self($this->query, $subQuery, false, $aliases);
@@ -311,15 +279,7 @@ class FilterExecutor
             $exec->execute($this->negateNode($node->getCondition()), 'where');
         };
 
-        if (method_exists($this->builder, $method)) {
-            $this->builder->{$method}($relationName, $handler);
-            return;
-        }
-
-        $fallback = $boolean === 'where' ? 'where' : 'orWhere';
-        $this->builder->{$fallback}(function (Builder $q) use ($relationName, $handler) {
-            $q->whereDoesntHave($relationName, $handler);
-        });
+        $this->builder->{$method}($relationName, $handler);
     }
 
     protected function applyNot(NotQueryNode $node, string $boolean): void
@@ -614,7 +574,6 @@ class FilterExecutor
             'tolower', 'lower' => 'LOWER',
             'toupper', 'upper' => 'UPPER',
             'trim' => 'TRIM',
-            default => strtoupper($transform),
         };
 
         return $function . '(' . $wrapped . ')';

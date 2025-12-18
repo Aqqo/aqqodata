@@ -166,25 +166,6 @@ it('can handle expand with empty expandables array', function () {
     expect($models)->toBeInstanceOf(\Illuminate\Support\Collection::class);
 });
 
-it('can handle expand with getRelatedModel method', function () {
-    // This tests lines 242-252 - getRelatedModel method
-    $models = createQueryFromParams(expand: 'relatedModel')->get();
-    $first = $models->first();
-    expect(array_key_exists('relatedModel', $first))->toEqual(true);
-});
-
-it('can handle expand with getRelatedModel method for non-existent relation', function () {
-    // This tests the exception handling in getRelatedModel method
-    expect(function () {
-        $request = new \Illuminate\Http\Request();
-        $request->setLaravelSession(app('session.store'));
-        $request->merge(['$expand' => 'nonExistentRelation']);
-        
-        $query = new \Aqqo\OData\Query(\Aqqo\OData\Tests\Testclasses\TestModel::query(), true, true, true, true, true, true, true, true, $request);
-        $query->get();
-    })->not()->toThrow(\Exception::class);
-});
-
 it('can handle expand with multiple nested levels', function () {
     // This tests complex nested expansion scenarios
     $models = createQueryFromParams(expand: 'relatedModel($expand=nestedRelatedModels)')->get();
@@ -193,18 +174,6 @@ it('can handle expand with multiple nested levels', function () {
     if (array_key_exists('relatedModel', $first) && !empty($first['relatedModel'])) {
         expect(array_key_exists('nestedRelatedModels', $first['relatedModel']))->toEqual(true);
     }
-});
-
-it('can handle expand with relation method that does not exist', function () {
-    // This tests the getRelatedModel method when relation method doesn't exist
-    expect(function () {
-        $request = new \Illuminate\Http\Request();
-        $request->setLaravelSession(app('session.store'));
-        $request->merge(['$expand' => 'invalidRelation']);
-        
-        $query = new \Aqqo\OData\Query(\Aqqo\OData\Tests\Testclasses\TestModel::query(), true, true, true, true, true, true, true, true, $request);
-        $query->get();
-    })->not()->toThrow(\Exception::class);
 });
 
 it('can handle expand with complex nested dot notation', function () {
@@ -321,4 +290,15 @@ it('can handle expand with mixed whitespace characters in relation names', funct
     $models = createQueryFromParams(expand: " \t\n\rrelatedModel \t\n\r")->get();
     $first = $models->first();
     expect(array_key_exists('relatedModel', $first))->toEqual(true);
+});
+
+it('handles parseExpandWithDetails regex failure', function () {
+    // This targets ExpandTrait line 169
+    $query = createQueryFromParams();
+    // Use a string that contains ( but doesn't match the full regex ^([A-Za-z_][A-Za-z0-9_]*)\((.+)\)$
+    // For example, starting with a number
+    $request = \Illuminate\Http\Request::create('/test', 'GET', ['$expand' => '1relation(select=id)']);
+    $query = new \Aqqo\OData\Query(\Aqqo\OData\Tests\Testclasses\TestModel::query(), request: $request);
+    
+    expect($query->toSql())->toBeString();
 });

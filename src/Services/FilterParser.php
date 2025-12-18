@@ -5,6 +5,7 @@ namespace Aqqo\OData\Services;
 use Aqqo\OData\QueryNodeStructure\BasicQueryNode;
 use Aqqo\OData\QueryNodeStructure\CompositeQueryNode;
 use Aqqo\OData\QueryNodeStructure\LambdaQueryNode;
+use Aqqo\OData\QueryNodeStructure\NotQueryNode;
 use Aqqo\OData\QueryNodeStructure\QueryNode;
 
 class FilterParser
@@ -102,6 +103,22 @@ class FilterParser
                 $value = '';
                 while ($i < $length) {
                     $current = mb_substr($input, $i, 1, 'UTF-8');
+                    
+                    // Handle OData-style doubled single quotes (e.g., 'don''t' -> "don't")
+                    if ($current === '\'' && $i + 1 < $length) {
+                        $next = mb_substr($input, $i + 1, 1, 'UTF-8');
+                        if ($next === '\'') {
+                            // Doubled quote - add single quote to value and skip both
+                            $value .= '\'';
+                            $i += 2;
+                            continue;
+                        }
+                        // Single quote not followed by another quote - end of string
+                        $i++;
+                        break;
+                    }
+                    
+                    // Handle backslash escaping
                     if ($current === '\\' && $i + 1 < $length) {
                         $next = mb_substr($input, $i + 1, 1, 'UTF-8');
                         if ($next === '\'' || $next === '\\') {
@@ -109,11 +126,6 @@ class FilterParser
                             $i += 2;
                             continue;
                         }
-                    }
-
-                    if ($current === '\'') {
-                        $i++;
-                        break;
                     }
 
                     $value .= $current;
@@ -204,6 +216,17 @@ class FilterParser
 
         if ($this->isFunctionCall()) {
             return $this->parseFunctionCall();
+        }
+
+        if ($this->matchKeyword('not')) {
+            $inner = $this->parsePrimary();
+            return new NotQueryNode($inner);
+        }
+
+        // Check if we're starting with a transformation: tolower(name) eq 'test'
+        if ($token['type'] === 'keyword' && in_array($token['value'], ['tolower', 'toupper', 'lower', 'upper', 'trim'], true) && $this->peekTypeAt(1, 'paren_open')) {
+            $path = $this->parsePath();
+            return $this->parseComparison($path);
         }
 
         // Check if we're starting with an operator (invalid syntax) - return a node with non-filterable field
@@ -481,7 +504,7 @@ class FilterParser
     private function expectIdentifierValue(): string
     {
         $token = $this->peek();
-        if (!$token || $token['type'] !== 'identifier') {
+        if (!$token || !in_array($token['type'], ['identifier', 'keyword'], true)) {
             throw new \InvalidArgumentException('Expected identifier.');
         }
 

@@ -49,16 +49,19 @@ it('can filter models using in operator', function () {
     // 1. We can filter models using the IN operator on direct model properties
     // 2. The IN operator is case insensitive ('in' vs 'IN')
     // 3. Multiple values can be correctly matched
+    // Escape single quotes in names (OData style: double them)
     
     // Take the first two models' names from our test data set
     $names = $this->models->take(2)->pluck('name')->toArray();
+    // Escape single quotes in names (OData style: double them)
+    $escapedNames = array_map(fn($name) => str_replace("'", "''", $name), $names);
 
     $occurrenceCount = countModelsMatchingCondition($this->models, function($model) use ($names) {
         return in_array($model->name, $names);
     });
     
     // Filter models where name matches either of the two names
-    $models = createQueryFromParams(filter: "name in ('{$names[0]}', '{$names[1]}')")
+    $models = createQueryFromParams(filter: "name in ('{$escapedNames[0]}', '{$escapedNames[1]}')")
         ->get();
 
     // Verify we get exactly two models back
@@ -167,16 +170,14 @@ it('can filter models using in operator on related models with numbers', functio
 it('can handle filter from URL pattern when no $filter parameter', function () {
     // Create a mock request with URL containing ID in parentheses
     $model = $this->models->first();
-    $request = new \Illuminate\Http\Request();
+    $request = \Illuminate\Http\Request::create("/test({$model->id})");
     $request->setLaravelSession(app('session.store'));
-    $request->server->set('REQUEST_URI', "/test/{$model->id}");
     
     $query = new \Aqqo\OData\Query(\Aqqo\OData\Tests\Testclasses\TestModel::query(), true, true, true, true, true, true, true, true, $request);
     $models = $query->get();
     
-    // The URL pattern should create a filter, but it might not work as expected
-    // Let's just verify that the query runs without error
-    expect($models)->toBeInstanceOf(\Illuminate\Support\Collection::class);
+    expect($models)->toHaveCount(1);
+    expect($models->first()['id'])->toEqual($model->id);
 });
 
 it('can handle empty grouped filters', function () {
@@ -240,7 +241,9 @@ it('can handle table name qualification with joins', function () {
 
 it('can handle IN operator with string format values', function () {
     $names = $this->models->take(2)->pluck('name')->toArray();
-    $models = createQueryFromParams(filter: "name in ('{$names[0]}', '{$names[1]}')")->get();
+    // Escape single quotes in names (OData style: double them)
+    $escapedNames = array_map(fn($name) => str_replace("'", "''", $name), $names);
+    $models = createQueryFromParams(filter: "name in ('{$escapedNames[0]}', '{$escapedNames[1]}')")->get();
     expect($models)->toHaveCount(2);
 });
 

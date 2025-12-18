@@ -67,7 +67,9 @@ describe('ResponseTrait', function () {
 
     it('handles filtered results', function () {
         $firstModel = $this->models->first();
-        $query = createQueryFromParams(filter: "name eq '{$firstModel->name}'");
+        // Escape single quotes in OData style (double them)
+        $escapedName = str_replace("'", "''", $firstModel->name);
+        $query = createQueryFromParams(filter: "name eq '{$escapedName}'");
         $response = $query->getResponse();
         
         expect($response)->toHaveKey('value');

@@ -60,7 +60,7 @@ trait AttributesTrait
 
             // Support for dynamic resolver.
             if (empty($instance->getSource()) && $reflectionClass->hasMethod('oData' . ucfirst(strtolower($instance->getName())) . 'Resolver')) {
-                $db_column = $builder->getModel()->{'oData' . ucfirst($instance->getName()) . 'Resolver'}();
+                $db_column = $builder->getModel()->{'oData' . ucfirst(strtolower($instance->getName())) . 'Resolver'}();
             }
 
             if ($instance->isSelectable()) {
@@ -121,26 +121,6 @@ trait AttributesTrait
     public function isPropertyFilterable(string $property, string|null $className = null): string|bool
     {
         return $this->isProperty($this->filterables, $property, $className);
-    }
-
-    /**
-     * @param string $property
-     * @param string|null $className
-     * @return bool
-     */
-    protected function isPropertySearchable(string $property, string|null $className = null): string|bool
-    {
-        return $this->isProperty($this->searchables, $property, $className);
-    }
-
-    /**
-     * @param string $property
-     * @param string|null $className
-     * @return bool
-     */
-    protected function isPropertyOrderable(string $property, string|null $className = null): string|bool
-    {
-        return $this->isProperty($this->orderables, $property, $className);
     }
 
     /**

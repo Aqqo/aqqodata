@@ -169,20 +169,6 @@ trait ExpandTrait
         return [null, null];
     }
 
-
-    /**
-     * Parse a detail string into key and value.
-     *
-     * @param string $detail
-     *
-     * @return array{0: string, 1: string} [key, value]
-     */
-    private function parseDetail(string $detail): array
-    {
-        $parts = explode('=', $detail, 2);
-        return [trim($parts[0]), trim($parts[1] ?? '')];
-    }
-
     /**
      * Handle the $select part of an expand.
      *
@@ -225,30 +211,5 @@ trait ExpandTrait
     private function handleOrderBy(Builder $builder, string $value): void
     {
         $this->appendOrderBy($value, $builder);
-    }
-
-    /**
-     * Retrieve the related model for a given expandable relation.
-     *
-     * @param Builder<TModelClass> $builder
-     * @param string  $expandable
-     *
-     * @return Model
-     * @throws ReflectionException
-     */
-    private function getRelatedModel(Builder $builder, string $expandable): Model
-    {
-        /** @var Model $model */
-        $model = $builder->getModel();
-
-        foreach (explode('.', $expandable) as $relation) {
-            if (method_exists($model, $relation)) {
-                $model = $model->$relation()->getRelated();
-            } else {
-                throw new \InvalidArgumentException("Relation '{$relation}' does not exist on model " . get_class($model));
-            }
-        }
-
-        return $model;
     }
 }
