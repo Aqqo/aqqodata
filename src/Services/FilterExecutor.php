@@ -221,6 +221,11 @@ class FilterExecutor
         if ($odataOperator === 'in') {
             $values = $this->formatInValues($node->getValue());
 
+            // Empty IN array should return all results (no filter applied)
+            if (empty($values)) {
+                return;
+            }
+
             if ($wrap) {
                 $operator = $negated ? 'NOT IN' : 'IN';
                 $placeholders = implode(', ', array_fill(0, count($values), '?'));
@@ -236,6 +241,11 @@ class FilterExecutor
 
         $sqlOperator = $this->mapOperator($odataOperator, $negated);
         $value = $this->prepareComparisonValue($node);
+
+        // Empty string value should return all results (no filter applied) for non-IN operators
+        if (is_string($value) && $value === '' && !in_array($odataOperator, ['contains', 'startswith', 'endswith'], true)) {
+            return;
+        }
 
         if (in_array($odataOperator, ['contains', 'startswith', 'endswith'], true)) {
             $this->applyWrappedRaw($boolean, $wrappedColumn . " {$sqlOperator} ?", [$value], false);
@@ -367,6 +377,11 @@ class FilterExecutor
 
     protected function resolveColumn(string $field): string|bool
     {
+        // Skip invalid fields (used for invalid filter syntax)
+        if ($field === '__invalid__') {
+            return false;
+        }
+
         $className = class_basename($this->builder->getModel());
         $mapped = $this->query->isPropertyFilterable($field, $className);
 
@@ -561,6 +576,12 @@ class FilterExecutor
 
         if ($odataOperator === 'in') {
             $values = $this->formatInValues($node->getValue());
+            
+            // Empty IN array should return all results (no filter applied)
+            if (empty($values)) {
+                return;
+            }
+            
             $placeholders = implode(', ', array_fill(0, count($values), '?'));
             $operator = $negated ? 'NOT IN' : 'IN';
             $this->builder->{$method}('(' . $columnSql . " {$operator} ({$placeholders}))", $values);

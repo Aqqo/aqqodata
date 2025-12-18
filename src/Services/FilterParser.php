@@ -197,8 +197,25 @@ class FilterParser
             return $node;
         }
 
+        // Check for alternative aggregate syntax: any(relation, condition) or all(relation, condition)
+        if ($this->isAlternativeAggregateSyntax()) {
+            return $this->parseAlternativeAggregateSyntax();
+        }
+
         if ($this->isFunctionCall()) {
             return $this->parseFunctionCall();
+        }
+
+        // Check if we're starting with an operator (invalid syntax) - return a node with non-filterable field
+        if ($token['type'] === 'keyword' && in_array($token['value'], ['eq', 'ne', 'gt', 'ge', 'lt', 'le', 'in'], true)) {
+            // Skip the operator and value, return a node that won't filter anything
+            $this->position++; // Skip operator
+            try {
+                $this->parseValue(); // Try to parse value if present
+            } catch (\InvalidArgumentException $e) {
+                // Ignore if value parsing fails
+            }
+            return new BasicQueryNode('__invalid__', 'eq', '');
         }
 
         return $this->parsePathBasedExpression();
@@ -337,6 +354,38 @@ class FilterParser
         return $token['type'] === 'keyword'
             && in_array($token['value'], ['contains', 'startswith', 'endswith'], true)
             && $next['type'] === 'paren_open';
+    }
+
+    private function isAlternativeAggregateSyntax(): bool
+    {
+        $token = $this->peek();
+        $next = $this->peek(1);
+        if (!$token || !$next) {
+            return false;
+        }
+
+        return $token['type'] === 'keyword'
+            && in_array($token['value'], ['any', 'all'], true)
+            && $next['type'] === 'paren_open';
+    }
+
+    private function parseAlternativeAggregateSyntax(): QueryNode
+    {
+        $lambda = $this->expectKeyword(['any', 'all'])['value'];
+        $this->expectType('paren_open');
+        
+        // Parse relation name
+        $relation = $this->expectIdentifierValue();
+        
+        // Expect comma
+        $this->expectType('comma');
+        
+        // Parse condition
+        $condition = $this->parseOrExpression();
+        
+        $this->expectType('paren_close');
+        
+        return new LambdaQueryNode($relation, $lambda, $condition, null);
     }
 
     private function expectEnd(): void
