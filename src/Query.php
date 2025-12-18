@@ -7,9 +7,8 @@ use Aqqo\OData\Traits\AttributesTrait;
 use Aqqo\OData\Traits\CountTrait;
 use Aqqo\OData\Traits\SearchTrait;
 use Aqqo\OData\Traits\SelectTrait;
-use Aqqo\OData\Utils\ClassUtils;
+use Aqqo\OData\Resolvers\ModelResolver;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Aqqo\OData\Traits\ExpandTrait;
@@ -51,6 +50,8 @@ class Query implements \JsonSerializable
      * @var \ReflectionClass<TModelClass>
      */
     protected \ReflectionClass $subjectModelReflectionClass;
+
+    private ModelResolver $modelResolver;
 
     /**
      * @param Builder<TModelClass> $subject
@@ -97,6 +98,8 @@ class Query implements \JsonSerializable
         if ($count) $this->addCount();
 
         if ($orderby) $this->addOrderBy();
+
+        $this->modelResolver = new ModelResolver($this->selects);
     }
 
     /**
@@ -158,7 +161,9 @@ class Query implements \JsonSerializable
     public function get(): \Illuminate\Support\Collection
     {
         try {
-            return $this->resolveCollection($this->subject->get());
+            $this->modelResolver->refreshSelects($this->selects);
+
+            return $this->modelResolver->resolveCollection($this->subject->get());
         } catch (\Exception $e) {
             throw new QueryException($e->getMessage(), (int)$e->getCode() ?: 0, $e);
         }
@@ -170,66 +175,5 @@ class Query implements \JsonSerializable
     public function jsonSerialize(): mixed
     {
         return $this->getResponse();
-    }
-
-    /**
-     * @param Collection<int, TModelClass> $collection
-     * @return \Illuminate\Support\Collection<int, array<string,mixed>>
-     */
-    private function resolveCollection(Collection $collection): \Illuminate\Support\Collection
-    {
-        return $collection->map(function ($item) {
-            return $this->resolveModel($item);
-        });
-    }
-
-    /**
-     *
-     * Be aware; the issue with not cloning the item might result in infinite loops when
-     * a mutated or casted attribute loads in more relations and maybe even a relation to the current item,
-     * therefor an infinite loop is introduced.
-     *
-     * @param Model $item
-     * @param bool $ignore_selects
-     * @return array
-     */
-    private function resolveModel(Model &$item, bool $ignore_selects = false): array
-    {
-        // First we clone the item. As the getAttribute might load extra relations we do not want.
-        $cloned_item = clone $item;
-
-        $attributes = [];
-        if ($ignore_selects) {
-            $attributes = $item->getAttributes();
-        } else {
-            foreach ($this->selects[ClassUtils::getShortName($item)] ?? [] as $odata_column => $db_column) {
-                $attributes[$odata_column] = $item->getAttribute($db_column);
-            }
-        }
-
-        // Then set the attribute on the clonedItem
-        $cloned_item->setRawAttributes($attributes);
-        foreach ($cloned_item->getRelations() as $key => $relation) {
-            if ($relation instanceof Collection) {
-                $attributes[$key] = $this->resolveCollection($relation);
-            } else if ($relation instanceof Model)  {
-                $reflectionClass = new \ReflectionClass($item);
-
-                if ($reflectionClass->hasMethod($key)) {
-                    $method = $reflectionClass->getMethod($key);
-                    $returnType = $method->getReturnType();
-
-                    if ($returnType && $returnType->getName() == MorphTo::class) {
-                        $attributes[$key] = $this->resolveModel($relation, true);
-                    } else {
-                        $attributes[$key] = $this->resolveModel($relation);
-                    }
-                } else {
-                    // Handle relations like BelongsToMany pivot without defined accessors on the model.
-                    $attributes[$key] = $this->resolveModel($relation, true);
-                }
-            }
-        }
-        return $attributes;
     }
 }
