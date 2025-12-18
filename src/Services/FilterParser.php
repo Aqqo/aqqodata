@@ -151,6 +151,13 @@ class FilterParser
                 continue;
             }
 
+            // OData $-prefixed identifiers (e.g. $count in navigation paths)
+            if ($char === '$' && preg_match('/^\$[_\p{L}][_\p{L}\p{N}]*/u', $remaining, $match) && $match[0] !== '') {
+                $tokens[] = ['type' => 'identifier', 'value' => $match[0]];
+                $i += mb_strlen($match[0], 'UTF-8');
+                continue;
+            }
+
             if (preg_match('/^[_\p{L}][_\p{L}\p{N}]*/u', $remaining, $match) && $match[0] !== '') {
                 $word = $match[0];
                 $lower = mb_strtolower($word, 'UTF-8');
@@ -226,6 +233,12 @@ class FilterParser
 
         // Check if we're starting with a transformation: tolower(name) eq 'test'
         if ($token['type'] === 'keyword' && in_array($token['value'], ['tolower', 'toupper', 'lower', 'upper', 'trim'], true) && $this->peekTypeAt(1, 'paren_open')) {
+            $path = $this->parsePath();
+            return $this->parseComparison($path);
+        }
+
+        // Generic function call on the LHS: abs(Amount) gt 100
+        if (in_array($token['type'], ['identifier', 'keyword'], true) && $this->peekTypeAt(1, 'paren_open')) {
             $path = $this->parsePath();
             return $this->parseComparison($path);
         }
@@ -321,6 +334,13 @@ class FilterParser
         }
 
         $value = $this->parseValue();
+        // Allow simple arithmetic expressions on RHS:
+        // <path> gt <value> div 2
+        while ($this->peekType('keyword') && in_array($this->peek()['value'] ?? '', ['add', 'sub', 'mul', 'div'], true)) {
+            $op = $this->expectKeyword(['add', 'sub', 'mul', 'div'])['value'];
+            $rhs = $this->parseValueOrPath();
+            $value = $value . ' ' . $op . ' ' . $rhs;
+        }
         return new BasicQueryNode($path, $operator, $value);
     }
 
@@ -329,6 +349,11 @@ class FilterParser
         $token = $this->peek();
         if (!$token) {
             throw new \InvalidArgumentException('Expected value but found end of filter.');
+        }
+
+        // Allow function calls as values (e.g. now())
+        if (in_array($token['type'], ['identifier', 'keyword'], true) && $this->peekTypeAt(1, 'paren_open')) {
+            return $this->parsePath();
         }
 
         // Allow paths (e.g. Orders/DiscountLimit, s/ArrivalTime) as values

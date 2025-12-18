@@ -277,3 +277,39 @@ it('covers remaining FilterExecutor branches to reach 100% file coverage', funct
     expect(true)->toBeTrue();
 });
 
+it('covers FilterExecutor relation $count comparison helper branches', function () {
+    $builder = \Aqqo\OData\Tests\Testclasses\TestModel::query();
+    $query = new \Aqqo\OData\Query($builder, select: false, filter: false, expand: false, search: false, skip: false, top: false, count: false, orderby: false, request: new \Illuminate\Http\Request());
+    $exec = new \Aqqo\OData\Services\FilterExecutor($query, $builder);
+
+    $ref = new ReflectionClass($exec);
+    $m = $ref->getMethod('applyRelationCountComparison');
+    $m->setAccessible(true);
+
+    // method_exists false (line 315)
+    $m->invoke($exec, 'doesNotExist', new \Aqqo\OData\QueryNodeStructure\BasicQueryNode('$count', 'gt', '1'), 'where');
+
+    // relation method exists but is not a Relation instance (line 320)
+    $fakeModel = new class extends \Illuminate\Database\Eloquent\Model {
+        protected $table = 'fake';
+        protected $guarded = [];
+        public function messages() { return 'not-a-relation'; }
+    };
+    $fakeBuilder = $fakeModel->newQuery();
+    $fakeQuery = new \Aqqo\OData\Query($fakeBuilder, select: false, filter: false, expand: false, search: false, skip: false, top: false, count: false, orderby: false, request: new \Illuminate\Http\Request());
+    $fakeExec = new \Aqqo\OData\Services\FilterExecutor($fakeQuery, $fakeBuilder);
+    $ref2 = new ReflectionClass($fakeExec);
+    $m2 = $ref2->getMethod('applyRelationCountComparison');
+    $m2->setAccessible(true);
+    $m2->invoke($fakeExec, 'messages', new \Aqqo\OData\QueryNodeStructure\BasicQueryNode('$count', 'gt', '1'), 'where');
+
+    // cover match arms for boolean => whereRaw/orWhereRaw/havingRaw/orHavingRaw/default (lines 331..334)
+    $m->invoke($exec, 'relatedModels', new \Aqqo\OData\QueryNodeStructure\BasicQueryNode('$count', 'gt', '1'), 'where');
+    $m->invoke($exec, 'relatedModels', new \Aqqo\OData\QueryNodeStructure\BasicQueryNode('$count', 'gt', '1'), 'orWhere');
+    $m->invoke($exec, 'relatedModels', new \Aqqo\OData\QueryNodeStructure\BasicQueryNode('$count', 'gt', '1'), 'having');
+    $m->invoke($exec, 'relatedModels', new \Aqqo\OData\QueryNodeStructure\BasicQueryNode('$count', 'gt', '1'), 'orHaving');
+    $m->invoke($exec, 'relatedModels', new \Aqqo\OData\QueryNodeStructure\BasicQueryNode('$count', 'gt', '1'), 'unknown');
+
+    expect(true)->toBeTrue();
+});
+

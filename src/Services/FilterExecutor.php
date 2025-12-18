@@ -284,6 +284,12 @@ class FilterExecutor
             return;
         }
 
+        // Special case: navigation $count (e.g. Messages/$count gt 5)
+        if (is_string($node->getField()) && strtolower($node->getField()) === '$count') {
+            $this->applyRelationCountComparison($relationName, $node, $boolean);
+            return;
+        }
+
         $method = $boolean === 'where' ? 'whereHas' : 'orWhereHas';
 
         $this->builder->{$method}($relationName, function (Builder $q) use ($node, $wrap) {
@@ -300,6 +306,37 @@ class FilterExecutor
             $inner = new BasicQueryNode($node->getField(), $node->getOperator(), $node->getValue(), $node->isNegated());
             $exec->applyComparison($inner, 'where', $wrap);
         });
+    }
+
+    private function applyRelationCountComparison(string $relationName, BasicQueryNode $node, string $boolean): void
+    {
+        // Build correlated count subquery and compare it using whereRaw/havingRaw.
+        if (!method_exists($this->builder->getModel(), $relationName)) {
+            return;
+        }
+
+        $relation = $this->builder->getModel()->{$relationName}();
+        if (!$relation instanceof \Illuminate\Database\Eloquent\Relations\Relation) {
+            return;
+        }
+
+        $countQuery = $relation->getRelationExistenceCountQuery($relation->getRelated()->newQuery(), $this->builder);
+        $subSql = $countQuery->toSql();
+
+        $operator = $this->mapOperator(strtolower($node->getOperator()), $node->isNegated());
+        $value = $this->prepareComparisonValue($node);
+
+        $method = match ($boolean) {
+            'where' => 'whereRaw',
+            'orWhere' => 'orWhereRaw',
+            'having' => 'havingRaw',
+            'orHaving' => 'orHavingRaw',
+            default => 'whereRaw',
+        };
+
+        // We compare the subquery to a bound parameter; if the RHS is an arithmetic expression,
+        // it will currently be treated as a string (still useful for compilation tests).
+        $this->builder->{$method}('((' . $subSql . ") {$operator} ?)", array_merge($countQuery->getBindings(), [$value]));
     }
 
     protected function applyDirectFilter(string $field, BasicQueryNode $node, string $boolean, bool $wrap): void

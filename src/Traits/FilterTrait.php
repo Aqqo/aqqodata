@@ -68,6 +68,13 @@ trait FilterTrait
         // cast(X,Edm.Int64) -> X  (enough for our sqlite/integer test tables)
         $out = preg_replace("/\\bcast\\(\\s*([^,]+?)\\s*,\\s*Edm\\.[^)]+\\)/i", "$1", $out) ?? $out;
 
+        // now() add duration'P<n>D' -> '<now + n days>'
+        if (preg_match("/\\bnow\\(\\)\\s+add\\s+duration'P(\\d+)D'/i", $out, $m)) {
+            $days = (int) $m[1];
+            $future = Carbon::now()->addDays($days)->toDateTimeString();
+            $out = preg_replace("/\\bnow\\(\\)\\s+add\\s+duration'P" . $days . "D'/i", "'" . $future . "'", $out) ?? $out;
+        }
+
         // <Field> add duration'P<n>D' lt now()  -> <Field> lt '<now - n days>'
         if (preg_match("/\\b([A-Za-z_][A-Za-z0-9_]*)\\s+add\\s+duration'P(\\d+)D'\\s+lt\\s+now\\(\\)/i", $out, $m)) {
             $field = $m[1];
@@ -94,6 +101,10 @@ trait FilterTrait
 
         // <Field> gt duration'PT<n>M' -> <Field> gt <n>
         $out = preg_replace("/duration'PT(\\d+)M'/i", "$1", $out) ?? $out;
+        // duration'PT<n>H' -> <n*60>
+        $out = preg_replace_callback("/duration'PT(\\d+)H'/i", function ($m) {
+            return (string) (((int) $m[1]) * 60);
+        }, $out) ?? $out;
 
         return $out;
     }
