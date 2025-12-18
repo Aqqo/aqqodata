@@ -101,8 +101,8 @@ trait SelectTrait
     public function resolveToDefaultSelects(Builder|Relation $builder): void
     {
         $shortName = strtolower((new \ReflectionClass($builder->getModel()))->getShortName());
-        foreach ($this->selectables[$shortName] ?? [] as $db_column => $selectable_column) {
-            $this->selects[$shortName][$db_column] = $selectable_column;
+        foreach ($this->defaultSelectables[$shortName] ?? [] as $odata_column => $db_column) {
+            $this->selects[$shortName][$odata_column] = $db_column;
         }
     }
 }

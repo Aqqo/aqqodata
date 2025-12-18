@@ -13,6 +13,7 @@ class ODataProperty
         protected string  $name,
         protected ?string $description = null,
         protected bool    $selectable = true,
+        protected bool    $defaultSelectable = true,
         protected bool    $filterable = true,
         protected bool    $searchable = false,
         protected bool    $orderable = true,
@@ -73,5 +74,13 @@ class ODataProperty
     public function getSource(): ?string
     {
         return $this->source;
+    }
+
+    /**
+     * @return bool
+     */
+    public function isDefaultSelectable(): bool
+    {
+        return $this->defaultSelectable;
     }
 }
