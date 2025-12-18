@@ -36,29 +36,53 @@ trait SearchTrait
      */
     public function appendSearchQuery(string $search, Builder $builder): void
     {
-        // Extract exact phrases and individual terms
+        // Extract exact phrases and individual terms (and keep AND/OR/NOT tokens)
         preg_match_all('/"([^"]+)"|(\S+)/', $search, $matches);
 
-        $exactPhrases = $matches[1]; // Array of exact phrases without quotes
-        $terms = $matches[2];        // Array of individual terms
+        $exactPhrases = $matches[1];
+        $terms = $matches[2];
 
-        $tokens = [];
+        $rawTokens = [];
         for ($i = 0; $i < count($matches[0]); $i++) {
             if (!empty($exactPhrases[$i])) {
-                $tokens[] = $exactPhrases[$i];
+                $rawTokens[] = $exactPhrases[$i];
             } elseif (!empty($terms[$i])) {
-                $tokens[] = $terms[$i];
+                $rawTokens[] = $terms[$i];
             }
         }
 
-        $inclusionTokens = [];
+        // If the search contains explicit boolean operators, interpret:
+        // - OR joins tokens in the same clause
+        // - AND joins clauses (each clause must match)
+        // - NOT negates the next token
+        $hasExplicitBoolean = collect($rawTokens)->contains(function ($t) {
+            return in_array(strtoupper($t), ['AND', 'OR'], true);
+        });
+
         $excludeTokens = [];
 
+        // clauses = array of OR-groups; overall is AND between clauses
+        $clauses = [];
+        $currentOrGroup = [];
         $expectExclude = false;
 
-        foreach ($tokens as $token) {
-            if (strcasecmp($token, 'NOT') === 0) {
+        foreach ($rawTokens as $token) {
+            $upper = strtoupper($token);
+
+            if ($upper === 'NOT') {
                 $expectExclude = true;
+                continue;
+            }
+
+            if ($hasExplicitBoolean && $upper === 'OR') {
+                continue;
+            }
+
+            if ($hasExplicitBoolean && $upper === 'AND') {
+                if (!empty($currentOrGroup)) {
+                    $clauses[] = $currentOrGroup;
+                    $currentOrGroup = [];
+                }
                 continue;
             }
 
@@ -68,43 +92,39 @@ trait SearchTrait
                 continue;
             }
 
-            $inclusionTokens[] = $token;
+            $currentOrGroup[] = $token;
         }
 
-        // Build inclusion conditions in an AND wrapper so they combine with previous filters
-        // ---------------------------------------------------------------------------------
-        // We wrap ALL inclusion tokens in one outer `where(function(){ … })` so that the
-        // predicate group is **AND-ed** with any previously-applied filter clauses coming
-        // from OData's $filter handling.  Inside that wrapper each token is OR-ed, meaning
-        // a record matches if **any** of the tokens is found in one of the searchable
-        // columns – but the whole group still respects the outer AND.
+        if ($hasExplicitBoolean) {
+            if (!empty($currentOrGroup)) {
+                $clauses[] = $currentOrGroup;
+            }
+        } else {
+            // Backward compatible behavior: no explicit boolean operators => one OR-clause
+            $clauses = [array_values(array_filter($currentOrGroup, fn ($t) => $t !== ''))];
+        }
 
-        if (!empty($inclusionTokens)) {
-            $builder->where(function ($outerQ) use ($inclusionTokens) {
-                foreach ($inclusionTokens as $index => $token) {
-                    // For the FIRST token we start a new condition with `where`, every
-                    // subsequent token is appended with `orWhere` so the tokens are OR-ed
-                    // together inside the outer wrapper.
+        // Build inclusion conditions:
+        // - AND between clauses
+        // - OR between tokens within each clause
+        foreach ($clauses as $clause) {
+            if (empty($clause)) {
+                continue;
+            }
+
+            $builder->where(function ($outerQ) use ($clause) {
+                foreach ($clause as $index => $token) {
                     $method = $index === 0 ? 'where' : 'orWhere';
 
                     if (strpos($token, '*') !== false) {
-                        // Support simple wildcard searches (e.g. "han*") by converting the
-                        // asterisk to SQL's `%` wildcard. Because the token might already
-                        // contain a `%` we just perform a straight replacement.
-                        $token = str_replace('*', '%', $token);
-                        // Build `(col LIKE 'han%') OR (other_col LIKE 'han%') …` for every
-                        // searchable column, then attach that group via the chosen `$method`.
-                        $outerQ->{$method}(function ($subQ) use ($token) {
+                        $like = str_replace('*', '%', $token);
+                        $outerQ->{$method}(function ($subQ) use ($like) {
                             foreach ($this->getSearchables() as $field) {
-                                $subQ->orWhere($field, 'LIKE', $token);
+                                $subQ->orWhere($field, 'LIKE', $like);
                             }
                         });
                     } else {
-                        // Non-wildcard token – we search for the token **anywhere** inside
-                        // the column value by wrapping it with `%` on both sides.
                         $like = "%" . $token . "%";
-                        // Same construction as above: OR all searchable columns for this
-                        // single token, then couple that group with `$method`.
                         $outerQ->{$method}(function ($subQ) use ($like) {
                             foreach ($this->getSearchables() as $field) {
                                 $subQ->orWhere($field, 'LIKE', $like);

@@ -585,7 +585,7 @@ describe('FilterExecutor', function () {
         $executor->execute($ast);
         
         $sql = $this->builder->toRawSql();
-        expect($sql)->toContain('IS NULL');
+        expect(strtolower($sql))->toContain('is null');
         
         // Also test ne null
         $builder2 = TestModel::query();
@@ -595,7 +595,7 @@ describe('FilterExecutor', function () {
         $executor2->execute($ast2);
         
         $sql2 = $builder2->toRawSql();
-        expect($sql2)->toContain('IS NOT NULL');
+        expect(strtolower($sql2))->toContain('is not null');
     });
 
     it('handles empty IN array returning early', function () {
@@ -643,7 +643,8 @@ describe('FilterExecutor', function () {
         $executor->execute($ast);
         
         $sql = $this->builder->toRawSql();
-        expect($sql)->toContain('or exists');
+        // Some grammars wrap the EXISTS in parentheses: "or (exists (...))"
+        expect(strtolower($sql))->toMatch('/\bor\s*\(?exists\b/');
     });
 
     it('handles applyNot with exists expression', function () {

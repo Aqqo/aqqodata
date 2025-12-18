@@ -86,6 +86,180 @@ class Testcase extends \Orchestra\Testbench\TestCase
             $table->morphs('parent');
             $table->string('name');
         });
+
+        // ---------------------------------------------------------------------
+        // OData "spec" models used for hard URL queries (feature coverage)
+        // ---------------------------------------------------------------------
+        $app['db']->connection()->getSchemaBuilder()->create('customers', function (Blueprint $table) {
+            $table->increments('id');
+            $table->string('name')->nullable();
+        });
+
+        $app['db']->connection()->getSchemaBuilder()->create('orders', function (Blueprint $table) {
+            $table->increments('id');
+            $table->unsignedInteger('customer_id')->nullable();
+            $table->decimal('amount', 12, 2)->default(0);
+            $table->decimal('discount_limit', 12, 2)->nullable();
+            $table->timestamps();
+        });
+
+        $app['db']->connection()->getSchemaBuilder()->create('order_lines', function (Blueprint $table) {
+            $table->increments('id');
+            $table->unsignedInteger('order_id')->nullable();
+            $table->unsignedInteger('product_id')->nullable();
+            $table->decimal('price', 12, 2)->default(0);
+        });
+
+        $app['db']->connection()->getSchemaBuilder()->create('categories', function (Blueprint $table) {
+            $table->increments('id');
+            $table->unsignedInteger('parent_id')->nullable();
+            $table->string('name')->nullable();
+        });
+
+        $app['db']->connection()->getSchemaBuilder()->create('products', function (Blueprint $table) {
+            $table->increments('id');
+            $table->string('category_id')->nullable();
+            $table->unsignedInteger('category_int_id')->nullable();
+            $table->string('name')->nullable();
+        });
+
+        $app['db']->connection()->getSchemaBuilder()->create('suppliers', function (Blueprint $table) {
+            $table->increments('id');
+            $table->string('country')->nullable();
+            $table->integer('rating')->nullable();
+        });
+
+        $app['db']->connection()->getSchemaBuilder()->create('product_supplier', function (Blueprint $table) {
+            $table->unsignedInteger('product_id');
+            $table->unsignedInteger('supplier_id');
+        });
+
+        $app['db']->connection()->getSchemaBuilder()->create('reviews', function (Blueprint $table) {
+            $table->increments('id');
+            $table->unsignedInteger('product_id')->nullable();
+            $table->unsignedInteger('reviewer_id')->nullable();
+            $table->integer('rating')->nullable();
+        });
+
+        $app['db']->connection()->getSchemaBuilder()->create('sales', function (Blueprint $table) {
+            $table->increments('id');
+            $table->string('region')->nullable();
+            $table->integer('year')->nullable();
+            $table->decimal('amount', 12, 2)->default(0);
+        });
+
+        $app['db']->connection()->getSchemaBuilder()->create('subscriptions', function (Blueprint $table) {
+            $table->increments('id');
+            $table->string('status')->nullable();
+            $table->dateTime('renewal_date')->nullable();
+        });
+
+        $app['db']->connection()->getSchemaBuilder()->create('employees', function (Blueprint $table) {
+            $table->increments('id');
+            $table->unsignedInteger('manager_id')->nullable();
+            $table->date('hire_date')->nullable();
+            $table->string('first_name')->nullable();
+            $table->string('last_name')->nullable();
+        });
+
+        $app['db']->connection()->getSchemaBuilder()->create('projects', function (Blueprint $table) {
+            $table->increments('id');
+            $table->unsignedInteger('owner_id')->nullable();
+        });
+
+        $app['db']->connection()->getSchemaBuilder()->create('tasks', function (Blueprint $table) {
+            $table->increments('id');
+            $table->unsignedInteger('project_id')->nullable();
+            $table->unsignedInteger('assignee_id')->nullable();
+        });
+
+        $app['db']->connection()->getSchemaBuilder()->create('documents', function (Blueprint $table) {
+            $table->increments('id');
+            $table->text('body')->nullable();
+        });
+
+        $app['db']->connection()->getSchemaBuilder()->create('tags', function (Blueprint $table) {
+            $table->increments('id');
+            $table->unsignedInteger('document_id')->nullable();
+            $table->string('t')->nullable();
+        });
+
+        $app['db']->connection()->getSchemaBuilder()->create('blogs', function (Blueprint $table) {
+            $table->increments('id');
+            $table->string('name')->nullable();
+        });
+
+        $app['db']->connection()->getSchemaBuilder()->create('posts', function (Blueprint $table) {
+            $table->increments('id');
+            $table->unsignedInteger('blog_id')->nullable();
+            $table->dateTime('published_date')->nullable();
+        });
+
+        $app['db']->connection()->getSchemaBuilder()->create('users', function (Blueprint $table) {
+            $table->increments('id');
+            $table->string('first_name')->nullable();
+            $table->string('last_name')->nullable();
+        });
+
+        $app['db']->connection()->getSchemaBuilder()->create('events', function (Blueprint $table) {
+            $table->increments('id');
+            $table->integer('attendees_count')->nullable();
+            $table->text('optional_note')->nullable();
+        });
+
+        $app['db']->connection()->getSchemaBuilder()->create('invoices', function (Blueprint $table) {
+            $table->increments('id');
+            $table->decimal('total_amount', 12, 2)->default(0);
+            $table->decimal('credit_limit', 12, 2)->default(0);
+        });
+
+        $app['db']->connection()->getSchemaBuilder()->create('invoice_items', function (Blueprint $table) {
+            $table->increments('id');
+            $table->unsignedInteger('invoice_id')->nullable();
+        });
+
+        $app['db']->connection()->getSchemaBuilder()->create('taxes', function (Blueprint $table) {
+            $table->increments('id');
+            $table->unsignedInteger('invoice_item_id')->nullable();
+            $table->decimal('rate', 5, 4)->nullable();
+        });
+
+        $app['db']->connection()->getSchemaBuilder()->create('flights', function (Blueprint $table) {
+            $table->increments('id');
+            $table->string('name')->nullable();
+        });
+
+        $app['db']->connection()->getSchemaBuilder()->create('segments', function (Blueprint $table) {
+            $table->increments('id');
+            $table->unsignedInteger('flight_id')->nullable();
+            $table->dateTime('departure_time')->nullable();
+            $table->dateTime('arrival_time')->nullable();
+            $table->integer('delay_minutes')->nullable();
+        });
+
+        $app['db']->connection()->getSchemaBuilder()->create('warehouses', function (Blueprint $table) {
+            $table->increments('id');
+            $table->string('name')->nullable();
+        });
+
+        $app['db']->connection()->getSchemaBuilder()->create('stocks', function (Blueprint $table) {
+            $table->increments('id');
+            $table->unsignedInteger('warehouse_id')->nullable();
+            $table->unsignedInteger('product_id')->nullable();
+            $table->integer('quantity')->nullable();
+        });
+
+        $app['db']->connection()->getSchemaBuilder()->create('messages', function (Blueprint $table) {
+            $table->increments('id');
+            $table->text('body')->nullable();
+            $table->dateTime('created_at')->nullable();
+        });
+
+        $app['db']->connection()->getSchemaBuilder()->create('accounts', function (Blueprint $table) {
+            $table->increments('id');
+            $table->string('country')->nullable();
+            $table->decimal('balance', 12, 2)->default(0);
+        });
     }
 
     /**

@@ -29,6 +29,9 @@ trait AttributesTrait
     /** @var array<string, array<string, string>> */
     private $expandables = [];
 
+    /** @var array<string, array<string, string>> */
+    private $expandableODataNamesBySource = [];
+
     /**
      * @return void
      * @throws \ReflectionException
@@ -89,7 +92,15 @@ trait AttributesTrait
             $relationshipInstance = $reflectionAttributes ? Arr::first($reflectionAttributes)?->newInstance() : null;
             if ($relationshipInstance) {
                 /** @var ODataRelationship $relationshipInstance */
-                $this->expandables[$shortName][strtolower($relationshipInstance->getName())] = $relationshipInstance->getSource() ?? $reflectionMethod->getName();
+                $source = $relationshipInstance->getSource() ?? $reflectionMethod->getName();
+                $odataName = $relationshipInstance->getName();
+
+                $this->expandables[$shortName][strtolower($odataName)] = $source;
+                // Used for response serialization: map Eloquent relation key (source/method) -> OData name
+                // Prefer the "real" accessor mapping (source == method name) over alias mappings.
+                if (!isset($this->expandableODataNamesBySource[$shortName][$source]) || $source === $reflectionMethod->getName()) {
+                    $this->expandableODataNamesBySource[$shortName][$source] = $odataName;
+                }
 
                 $model = $builder->getModel()->{$reflectionMethod->getName()}()->getModel();
                 $reflection = new \ReflectionClass($model);
@@ -118,9 +129,14 @@ trait AttributesTrait
      * @param string|null $className Optional model class short name for context.
      * @return string|bool           The mapped database column name or false if not filterable.
      */
-    public function isPropertyFilterable(string $property, string|null $className = null): string|bool
+    public function isPropertyFilterable(string $property, string|null $className = null): string|\Illuminate\Database\Query\Expression|bool
     {
         return $this->isProperty($this->filterables, $property, $className);
+    }
+
+    public function isPropertyOrderable(string $property, string|null $className = null): string|bool
+    {
+        return $this->isProperty($this->orderables, $property, $className);
     }
 
     /**
@@ -129,7 +145,7 @@ trait AttributesTrait
      * @param string|null $className
      * @return string|bool
      */
-    private function isProperty(array $array, string $property, string|null $className = null): string|bool
+    private function isProperty(array $array, string $property, string|null $className = null): string|\Illuminate\Database\Query\Expression|bool
     {
         $className ??= $this->subjectModelReflectionClass->getShortName();
         if (empty($array)) {
@@ -187,6 +203,29 @@ trait AttributesTrait
         }
 
         return false;
+    }
+
+    public function getODataRelationshipNameForSource(string $source, string|null $className = null): ?string
+    {
+        $className ??= $this->subjectModelReflectionClass->getShortName();
+        $short = strtolower(\Illuminate\Support\Str::singular($className));
+
+        return $this->expandableODataNamesBySource[$short][$source] ?? null;
+    }
+
+    /**
+     * Register a computed property (e.g. aggregate output alias) as selectable/filterable/orderable.
+     * This is used by $apply to allow $filter/$orderby to reference computed fields.
+     */
+    public function registerComputedProperty(string $property, string|null $className = null, string|\Illuminate\Database\Query\Expression|null $filterExpression = null): void
+    {
+        $className ??= $this->subjectModelReflectionClass->getShortName();
+        $short = strtolower(\Illuminate\Support\Str::singular($className));
+
+        $this->selectables[$short][$property] = $property;
+        $this->defaultSelectables[$short][$property] = $property;
+        $this->filterables[$short][$property] = $filterExpression ?? $property;
+        $this->orderables[$short][$property] = $property;
     }
 
     /**

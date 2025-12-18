@@ -34,7 +34,16 @@ trait OrderByTrait
     {
         foreach (explode(',', $orderby) as $order) {
             $order = explode(' ', trim($order));
-            $builder->orderBy($order[0], $order[1] ?? 'asc');
+            $field = $order[0];
+            $direction = $order[1] ?? 'asc';
+
+            // Map OData property name -> db column when known, otherwise keep old behavior.
+            $mapped = $this->isPropertyOrderable($field, class_basename($builder->getModel()));
+            if (is_string($mapped)) {
+                $field = $mapped;
+            }
+
+            $builder->orderBy($field, $direction);
         }
     }
 }

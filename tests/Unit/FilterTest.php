@@ -18,12 +18,14 @@ beforeEach(function () {
 
 it('can filter models by name', function () {
     $name = $this->models->first()->name;
+    // OData string escaping uses doubled single quotes
+    $escapedName = str_replace("'", "''", $name);
 
     $occurrenceCount = countModelsMatchingCondition($this->models, function($model) use ($name) {
         return $model->name === $name;
     });
 
-    $models = createQueryFromParams(filter: "name eq '{$name}'")
+    $models = createQueryFromParams(filter: "name eq '{$escapedName}'")
         ->get();
 
     expect($models)->toHaveCount($occurrenceCount);
@@ -32,12 +34,14 @@ it('can filter models by name', function () {
 
 it('can filter models by name not equals', function () {
     $name = $this->models->first()->name;
+    // OData string escaping uses doubled single quotes
+    $escapedName = str_replace("'", "''", $name);
 
     $occurrenceCount = countModelsMatchingCondition($this->models, function($model) use ($name) {
         return $model->name !== $name;
     });
 
-    $models = createQueryFromParams(filter: "name ne '{$name}'")
+    $models = createQueryFromParams(filter: "name ne '{$escapedName}'")
         ->get();
 
     expect($models)->toHaveCount($occurrenceCount);
@@ -432,7 +436,7 @@ it('can handle complex nested any/all with multiple conditions', function () {
 
 it('can handle complex nested any/all with multiple levels', function () {
     $query = createQueryFromParams(filter: "relatedModels/any(r:r/name eq 'Test' and r/subModels/any(s:s/status eq 'active')) and relatedModels/all(r:r/cost gt 100 or r/subModels/all(s:s/status eq 'inactive'))");
-    expect($query->toSql())->toEqual('select * from "test_models" where exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and "related_models"."name" = \'Test\' and exists (select * from "sub_models" where "related_models"."id" = "sub_models"."related_model_id" and "sub_models"."status" = \'active\')) and not exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and "related_models"."cost" <= \'100\' and not exists (select * from "sub_models" where "related_models"."id" = "sub_models"."related_model_id" and "sub_models"."status" = \'inactive\')) limit 100 offset 0');
+    expect($query->toSql())->toEqual('select * from "test_models" where exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and "related_models"."name" = \'Test\' and exists (select * from "sub_models" where "related_models"."id" = "sub_models"."related_model_id" and "sub_models"."status" = \'active\')) and not exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and "related_models"."cost" <= \'100\' and exists (select * from "sub_models" where "related_models"."id" = "sub_models"."related_model_id" and "sub_models"."status" != \'inactive\')) limit 100 offset 0');
 });
 
 it('can handle complex numeric operations', function () {
@@ -467,5 +471,5 @@ it('can handle complex nested any/all with multiple conditions and functions', f
 
 it('can handle complex nested any/all with multiple levels and functions', function () {
     $query = createQueryFromParams(filter: "relatedModels/any(r:contains(r/name, 'Test') and r/subModels/any(s:startswith(s/status, 'active'))) and relatedModels/all(r:r/cost gt 100 or r/subModels/all(s:endswith(s/status, 'inactive')))");
-    expect($query->toSql())->toEqual('select * from "test_models" where exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and ("related_models"."name" LIKE \'%Test%\') and exists (select * from "sub_models" where "related_models"."id" = "sub_models"."related_model_id" and ("sub_models"."status" LIKE \'active%\'))) and not exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and "related_models"."cost" <= \'100\' and not exists (select * from "sub_models" where "related_models"."id" = "sub_models"."related_model_id" and ("sub_models"."status" LIKE \'%inactive\'))) limit 100 offset 0');
+    expect($query->toSql())->toEqual('select * from "test_models" where exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and ("related_models"."name" LIKE \'%Test%\') and exists (select * from "sub_models" where "related_models"."id" = "sub_models"."related_model_id" and ("sub_models"."status" LIKE \'active%\'))) and not exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and "related_models"."cost" <= \'100\' and exists (select * from "sub_models" where "related_models"."id" = "sub_models"."related_model_id" and ("sub_models"."status" NOT LIKE \'%inactive\'))) limit 100 offset 0');
 });

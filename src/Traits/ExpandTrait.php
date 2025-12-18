@@ -57,7 +57,7 @@ trait ExpandTrait
 
             if ($relation && $details) {
                 // Determine if the relation is expandable
-                $expandable = $this->isPropertyExpandable($relation, $parentRelation);
+                $expandable = $this->isPropertyExpandable($relation, class_basename($builder->getModel()));
 
                 if ($expandable) {
                     $this->addSelectForExpand($builder, $relation);
@@ -69,7 +69,7 @@ trait ExpandTrait
             }
         } else {
             // Simple relation without nested expands
-            $expandable = $this->isPropertyExpandable($expand, $parentRelation);
+            $expandable = $this->isPropertyExpandable($expand, class_basename($builder->getModel()));
 
             if ($expandable) {
                 $this->addSelectForExpand($builder, $expand);
@@ -135,6 +135,22 @@ trait ExpandTrait
         } elseif (Str::startsWith(strtolower($option), '$orderby=')) {
             $value = substr($option, strlen('$orderby='));
             $this->handleOrderBy($builder, $value);
+        } elseif (Str::startsWith(strtolower($option), '$top=')) {
+            $value = (int) substr($option, strlen('$top='));
+            if ($builder instanceof Relation) {
+                $builder = $builder->getQuery();
+            }
+            $builder->limit(max(0, $value));
+        } elseif (Str::startsWith(strtolower($option), '$skip=')) {
+            $value = (int) substr($option, strlen('$skip='));
+            if ($builder instanceof Relation) {
+                $builder = $builder->getQuery();
+            }
+            $builder->skip(max(0, $value));
+        } elseif (Str::startsWith(strtolower($option), '$apply=')) {
+            $value = substr($option, strlen('$apply='));
+            // Apply pipeline transformations within expanded relations
+            $this->applyToBuilder($builder, $value);
         } elseif (Str::startsWith(strtolower($option), '$expand=')) {
             $value = substr($option, strlen('$expand='));
 
@@ -144,7 +160,8 @@ trait ExpandTrait
             foreach ($expandExpressions as $expr) {
                 $expr = trim($expr);
                 if (!empty($expr)) {
-                    $this->processExpandExpression($expr, $builder, $relation);
+                        // Determine nested expands based on the current builder's model, not relation name
+                        $this->processExpandExpression($expr, $builder, class_basename($builder->getModel()));
                 }
             }
         } else {

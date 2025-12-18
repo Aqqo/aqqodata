@@ -4,6 +4,7 @@ namespace Aqqo\OData;
 
 use Aqqo\OData\Exceptions\QueryException;
 use Aqqo\OData\Traits\AttributesTrait;
+use Aqqo\OData\Traits\ApplyTrait;
 use Aqqo\OData\Traits\CountTrait;
 use Aqqo\OData\Traits\SearchTrait;
 use Aqqo\OData\Traits\SelectTrait;
@@ -46,6 +47,8 @@ class Query implements \JsonSerializable
     use ResponseTrait;
     /** @use AttributesTrait */
     use AttributesTrait;
+    /** @use ApplyTrait<TModelClass> */
+    use ApplyTrait;
 
     /**
      * @var \ReflectionClass<TModelClass>
@@ -82,7 +85,10 @@ class Query implements \JsonSerializable
 
         $this->handleAttributes();
 
-        if ($select) $this->addSelect();
+        // $apply can transform the projection (groupby/aggregate) and must run before select/filter/orderby
+        $this->addApply();
+
+        if ($select && !$this->hasApply) $this->addSelect();
 
         if ($filter) $this->addFilters();
 
@@ -210,8 +216,9 @@ class Query implements \JsonSerializable
         // Then set the attribute on the clonedItem
         $cloned_item->setRawAttributes($attributes);
         foreach ($cloned_item->getRelations() as $key => $relation) {
+            $odataKey = $this->getODataRelationshipNameForSource((string) $key, class_basename($item)) ?? $key;
             if ($relation instanceof Collection) {
-                $attributes[$key] = $this->resolveCollection($relation);
+                $attributes[$odataKey] = $this->resolveCollection($relation);
             } else if ($relation instanceof Model)  {
                 $reflectionClass = new \ReflectionClass($item);
 
@@ -220,13 +227,13 @@ class Query implements \JsonSerializable
                     $returnType = $method->getReturnType();
 
                     if ($returnType && $returnType->getName() == MorphTo::class) {
-                        $attributes[$key] = $this->resolveModel($relation, true);
+                        $attributes[$odataKey] = $this->resolveModel($relation, true);
                     } else {
-                        $attributes[$key] = $this->resolveModel($relation);
+                        $attributes[$odataKey] = $this->resolveModel($relation);
                     }
                 } else {
                     // Handle relations like BelongsToMany pivot without defined accessors on the model.
-                    $attributes[$key] = $this->resolveModel($relation, true);
+                    $attributes[$odataKey] = $this->resolveModel($relation, true);
                 }
             }
         }

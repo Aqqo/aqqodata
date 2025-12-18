@@ -16,6 +16,7 @@ class FilterParser
     private const KEYWORDS = [
         'and', 'or', 'not',
         'eq', 'ne', 'gt', 'ge', 'lt', 'le', 'in',
+        'add', 'sub', 'mul', 'div',
         'any', 'all',
         'contains', 'startswith', 'endswith',
         'tolower', 'toupper', 'lower', 'upper', 'trim',
@@ -274,6 +275,15 @@ class FilterParser
         }
 
         $path = implode('/', $segments);
+
+        // Support simple arithmetic expressions on the LHS before comparison:
+        // <path> mul <value> gt <value>
+        while ($this->peekType('keyword') && in_array($this->peek()['value'] ?? '', ['add', 'sub', 'mul', 'div'], true)) {
+            $op = $this->expectKeyword(['add', 'sub', 'mul', 'div'])['value'];
+            $rhs = $this->parseValueOrPath();
+            $path = $path . ' ' . $op . ' ' . $rhs;
+        }
+
         return $this->parseComparison($path);
     }
 
@@ -321,6 +331,11 @@ class FilterParser
             throw new \InvalidArgumentException('Expected value but found end of filter.');
         }
 
+        // Allow paths (e.g. Orders/DiscountLimit, s/ArrivalTime) as values
+        if (in_array($token['type'], ['identifier', 'keyword'], true) && $this->peekTypeAt(1, 'slash')) {
+            return $this->parsePath();
+        }
+
         if (in_array($token['type'], ['string', 'number'], true)) {
             $this->position++;
             return $token['value'];
@@ -356,6 +371,23 @@ class FilterParser
             return $function . '(' . $inner . ')';
         }
 
+        // Generic function call support (e.g. concat(a,b), length(x), cast(x,y), now())
+        if ($token && in_array($token['type'], ['identifier', 'keyword'], true) && $this->peekTypeAt(1, 'paren_open')) {
+            $function = $this->expectIdentifierValue();
+            $this->expectType('paren_open');
+
+            $args = [];
+            if (!$this->matchType('paren_close')) {
+                $args[] = $this->parseValueOrPath();
+                while ($this->matchType('comma')) {
+                    $args[] = $this->parseValueOrPath();
+                }
+                $this->expectType('paren_close');
+            }
+
+            return $function . '(' . implode(',', $args) . ')';
+        }
+
         $segments = [];
         $segments[] = $this->expectIdentifierValue();
 
@@ -364,6 +396,25 @@ class FilterParser
         }
 
         return implode('/', $segments);
+    }
+
+    private function parseValueOrPath(): string
+    {
+        $token = $this->peek();
+        if (!$token) {
+            throw new \InvalidArgumentException('Expected value but found end of filter.');
+        }
+
+        if (in_array($token['type'], ['identifier', 'keyword'], true) && $this->peekTypeAt(1, 'paren_open')) {
+            return $this->parsePath();
+        }
+
+        // Allow slash-separated paths as arguments (e.g. concat(a,b) where a is a path)
+        if (in_array($token['type'], ['identifier', 'keyword'], true) && $this->peekTypeAt(1, 'slash')) {
+            return $this->parsePath();
+        }
+
+        return $this->parseValue();
     }
 
     private function isFunctionCall(): bool

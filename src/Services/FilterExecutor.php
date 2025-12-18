@@ -7,6 +7,7 @@ use Aqqo\OData\QueryNodeStructure\CompositeQueryNode;
 use Aqqo\OData\QueryNodeStructure\LambdaQueryNode;
 use Aqqo\OData\QueryNodeStructure\NotQueryNode;
 use Aqqo\OData\QueryNodeStructure\QueryNode;
+use Aqqo\OData\Utils\StringUtils;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Query\Expression;
 
@@ -17,13 +18,30 @@ class FilterExecutor
     protected bool $isRoot;
     /** @var array<string, true> */
     protected array $lambdaAliases;
+    protected string $rootTable;
+    protected string $rootModel;
+    protected ?string $parentTable;
+    protected ?string $parentModel;
 
-    public function __construct(Query $query, Builder $builder, bool $isRoot = true, array $lambdaAliases = [])
+    public function __construct(
+        Query $query,
+        Builder $builder,
+        bool $isRoot = true,
+        array $lambdaAliases = [],
+        ?string $rootTable = null,
+        ?string $rootModel = null,
+        ?string $parentTable = null,
+        ?string $parentModel = null
+    )
     {
         $this->query = $query;
         $this->builder = $builder;
         $this->isRoot = $isRoot;
         $this->lambdaAliases = $lambdaAliases;
+        $this->rootTable = $rootTable ?? $builder->getModel()->getTable();
+        $this->rootModel = $rootModel ?? class_basename($builder->getModel());
+        $this->parentTable = $parentTable;
+        $this->parentModel = $parentModel;
     }
 
     public function execute(QueryNode $expr, string $boolean = 'where', bool $wrap = false): void
@@ -86,7 +104,7 @@ class FilterExecutor
 
         $method = $boolean === 'where' ? 'where' : $boolean;
         $this->builder->{$method}(function (Builder $q) use ($left, $right, $wrap) {
-            $exec = new self($this->query, $q, false, $this->lambdaAliases);
+            $exec = new self($this->query, $q, false, $this->lambdaAliases, $this->rootTable, $this->rootModel, $this->parentTable, $this->parentModel);
             $exec->execute($left, 'where');
             $exec->execute($right, 'orWhere');
         });
@@ -107,7 +125,7 @@ class FilterExecutor
             $method = $boolean === 'where' ? 'where' : $boolean;
 
             $this->builder->{$method}(function (Builder $q) use ($left, $right, $childWrap) {
-                $exec = new self($this->query, $q, false, $this->lambdaAliases);
+                $exec = new self($this->query, $q, false, $this->lambdaAliases, $this->rootTable, $this->rootModel, $this->parentTable, $this->parentModel);
                 $exec->execute($left, 'where', $childWrap);
                 $exec->execute($right, 'where', $childWrap);
             });
@@ -121,6 +139,12 @@ class FilterExecutor
 
     protected function applyComparison(BasicQueryNode $node, string $boolean, bool $wrap = false): void
     {
+        // Arithmetic expression on LHS (e.g. TotalAmount mul 1.21 gt CreditLimit)
+        if (preg_match('/\\s(?:add|sub|mul|div)\\s/i', $node->getField()) === 1) {
+            $this->applyArithmeticComparison($node, $boolean, $wrap);
+            return;
+        }
+
         [$transform, $field] = $this->extractTransform($node->getField());
 
         if (str_contains($field, '/')) {
@@ -144,6 +168,115 @@ class FilterExecutor
         $this->applyDirectFilter($this->applyTransform($transform, $field), $node, $boolean, $wrap);
     }
 
+    private function applyArithmeticComparison(BasicQueryNode $node, string $boolean, bool $wrap): void
+    {
+        // Only supports: "<left> <op> <rhs>" where left is identifier and rhs is number/identifier.
+        $fieldExpr = trim($node->getField());
+        if (!preg_match('/^([A-Za-z_][A-Za-z0-9_]*)\\s+(add|sub|mul|div)\\s+(.+)$/i', $fieldExpr, $m)) {
+            // Fallback: attempt normal processing
+            $this->applyDirectFilter($fieldExpr, $node, $boolean, $wrap);
+            return;
+        }
+
+        $leftName = $m[1];
+        $op = strtolower($m[2]);
+        $rhsRaw = trim($m[3]);
+
+        $grammar = $this->builder->getQuery()->getGrammar();
+        $table = $this->builder->getModel()->getTable();
+        $leftCol = $this->resolveColumn($leftName);
+        if ($leftCol === false || $leftCol === true) {
+            return;
+        }
+        $leftSql = $leftCol instanceof Expression
+            ? $leftCol->getValue($grammar)
+            : $grammar->wrap($table . '.' . $leftCol);
+
+        // RHS of arithmetic
+        $rhsSql = null;
+        if (is_numeric($rhsRaw)) {
+            $rhsSql = $rhsRaw;
+        } else {
+            // strip quotes if any
+            $rhsName = trim($rhsRaw, "'");
+            // allow paths like Orders/DiscountLimit by taking last segment
+            if (str_contains($rhsName, '/')) {
+                $parts = explode('/', $rhsName);
+                $rhsName = end($parts) ?: $rhsName;
+            }
+
+            $rhsCol = $this->resolveColumn($rhsName);
+            if ($rhsCol !== false && $rhsCol !== true) {
+                $rhsSql = $rhsCol instanceof Expression
+                    ? $rhsCol->getValue($grammar)
+                    : $grammar->wrap($table . '.' . $rhsCol);
+            } else {
+                // try root scope
+                $mapped = $this->query->isPropertyFilterable($rhsName, $this->rootModel);
+                if ($mapped !== false && $mapped !== true) {
+                    $rhsSql = $mapped instanceof Expression
+                        ? $mapped->getValue($grammar)
+                        : $grammar->wrap($this->rootTable . '.' . $mapped);
+                }
+            }
+        }
+
+        if ($rhsSql === null) {
+            return;
+        }
+
+        $arithOp = match ($op) {
+            'mul' => '*',
+            'add' => '+',
+            'sub' => '-',
+            'div' => '/',
+        };
+
+        $lhsSql = '(' . $leftSql . ' ' . $arithOp . ' ' . $rhsSql . ')';
+
+        // RHS of comparison can be identifier/Expression too
+        $odataOperator = strtolower($node->getOperator());
+        $sqlOperator = $this->mapOperator($odataOperator, $node->isNegated());
+
+        $rawValue = $node->getValue();
+        $valueSql = null;
+        $bindings = [];
+
+        if (is_string($rawValue) && preg_match('/^[A-Za-z_]/', $rawValue) === 1) {
+            $valuePath = $rawValue;
+            if (str_contains($valuePath, '/')) {
+                $parts = explode('/', $valuePath);
+                $valuePath = end($parts) ?: $valuePath;
+            }
+            $col = $this->resolveColumn($valuePath);
+            if ($col !== false && $col !== true) {
+                $valueSql = $col instanceof Expression
+                    ? $col->getValue($grammar)
+                    : $grammar->wrap($table . '.' . $col);
+            }
+        }
+
+        if ($valueSql === null) {
+            $value = $this->prepareComparisonValue($node);
+            if (is_string($value) && is_numeric($value)) {
+                $valueSql = $value;
+            } else {
+                $valueSql = '?';
+                $bindings = [$value];
+            }
+        }
+
+        $method = match ($boolean) {
+            'where' => 'whereRaw',
+            'orWhere' => 'orWhereRaw',
+            'having' => 'havingRaw',
+            'orHaving' => 'orHavingRaw',
+            default => 'whereRaw',
+        };
+
+        $this->builder->{$method}('(' . $lhsSql . " {$sqlOperator} {$valueSql})", $bindings);
+    }
+
     protected function applyRelationComparison(string $relation, BasicQueryNode $node, string $boolean, bool $wrap): void
     {
         $relationName = $this->resolveRelationName($relation);
@@ -154,7 +287,16 @@ class FilterExecutor
         $method = $boolean === 'where' ? 'whereHas' : 'orWhereHas';
 
         $this->builder->{$method}($relationName, function (Builder $q) use ($node, $wrap) {
-            $exec = new self($this->query, $q, false, $this->lambdaAliases);
+            $exec = new self(
+                $this->query,
+                $q,
+                false,
+                $this->lambdaAliases,
+                $this->rootTable,
+                $this->rootModel,
+                $this->builder->getModel()->getTable(),
+                class_basename($this->builder->getModel())
+            );
             $inner = new BasicQueryNode($node->getField(), $node->getOperator(), $node->getValue(), $node->isNegated());
             $exec->applyComparison($inner, 'where', $wrap);
         });
@@ -166,21 +308,120 @@ class FilterExecutor
 
         $column = $this->resolveColumn($baseField);
         if ($column === false) {
-            return;
+            // Support simple computed function expressions (e.g. trim(concat(...))) on the LHS.
+            if (is_string($baseField) && str_contains($baseField, '(') && str_ends_with(trim($baseField), ')')) {
+                $column = new Expression($this->compileExpressionString($baseField));
+            } else {
+                return;
+            }
         }
 
         $table = $this->builder->getModel()->getTable();
-        $qualified = $table . '.' . $column;
         $grammar = $this->builder->getQuery()->getGrammar();
-        $wrappedColumn = $grammar->wrap($qualified);
+
+        // Column can be a raw SQL expression (e.g. aggregate output used in HAVING)
+        if ($column instanceof Expression) {
+            $qualified = $column;
+            $wrappedColumn = $column->getValue($grammar);
+        } else {
+            // Always qualify "normal" columns (the library supports virtual/non-schema fields too).
+            $qualified = $table . '.' . $column;
+            $wrappedColumn = $grammar->wrap($qualified);
+        }
 
         if ($transform !== null) {
+            if ($qualified instanceof Expression) {
+                $columnSql = $this->buildTransformedExpressionSql($wrappedColumn, $transform);
+                $odataOperator = strtolower($node->getOperator());
+                $negated = $node->isNegated();
+
+                if ($this->isNullComparison($odataOperator, $node->getValue())) {
+                    $shouldBeNull = ($odataOperator === 'eq') !== $negated;
+                    $method = match ($boolean) {
+                        'where' => 'whereRaw',
+                        'orWhere' => 'orWhereRaw',
+                        'having' => 'havingRaw',
+                        'orHaving' => 'orHavingRaw',
+                        default => 'whereRaw',
+                    };
+                    $this->builder->{$method}('(' . $columnSql . ' ' . ($shouldBeNull ? 'IS NULL' : 'IS NOT NULL') . ')');
+                    return;
+                }
+
+                $sqlOperator = $this->mapOperator($odataOperator, $negated);
+                $value = $this->prepareComparisonValue($node);
+                $method = match ($boolean) {
+                    'where' => 'whereRaw',
+                    'orWhere' => 'orWhereRaw',
+                    'having' => 'havingRaw',
+                    'orHaving' => 'orHavingRaw',
+                    default => 'whereRaw',
+                };
+                $this->builder->{$method}('(' . $columnSql . " {$sqlOperator} ?)", [$value]);
+                return;
+            }
+
             $this->applyTransformedFilter($qualified, $transform, $node, $boolean);
             return;
         }
 
         $odataOperator = strtolower($node->getOperator());
         $negated = $node->isNegated();
+
+        // Support comparisons where RHS is a column/expression (including parent/root scopes).
+        $rawNodeValue = $node->getValue();
+        if (is_string($rawNodeValue)
+            && preg_match('/^[A-Za-z_]/', $rawNodeValue) === 1
+            && !in_array(strtolower($rawNodeValue), ['null', 'true', 'false'], true)
+        ) {
+            $valuePath = $rawNodeValue;
+            if (str_contains($valuePath, '/')) {
+                $parts = explode('/', $valuePath);
+                if (isset($this->lambdaAliases[$parts[0]])) {
+                    array_shift($parts);
+                }
+                $valuePath = end($parts) ?: $rawNodeValue;
+            }
+
+            $sqlOperator = $this->mapOperator($odataOperator, $negated);
+            $method = match ($boolean) {
+                'where' => 'whereRaw',
+                'orWhere' => 'orWhereRaw',
+                'having' => 'havingRaw',
+                'orHaving' => 'orHavingRaw',
+                default => 'whereRaw',
+            };
+
+            // 1) current scope
+            $right = $this->resolveColumn($valuePath);
+            if ($right !== false) {
+                $rightSql = $right instanceof Expression
+                    ? $right->getValue($grammar)
+                    : $grammar->wrap($table . '.' . $right);
+
+                $this->builder->{$method}('(' . $wrappedColumn . " {$sqlOperator} " . $rightSql . ')');
+                return;
+            }
+
+            // 2) parent/root scopes (correlated comparisons)
+            foreach ([[$this->parentTable, $this->parentModel], [$this->rootTable, $this->rootModel]] as [$scopeTable, $scopeModel]) {
+                if (!$scopeTable || !$scopeModel) {
+                    continue;
+                }
+
+                $mapped = $this->query->isPropertyFilterable($valuePath, $scopeModel);
+                if ($mapped === false || $mapped === true) {
+                    continue;
+                }
+
+                $rightSql = $mapped instanceof Expression
+                    ? $mapped->getValue($grammar)
+                    : $grammar->wrap($scopeTable . '.' . $mapped);
+
+                $this->builder->{$method}('(' . $wrappedColumn . " {$sqlOperator} " . $rightSql . ')');
+                return;
+            }
+        }
 
         if ($this->isNullComparison($odataOperator, $node->getValue())) {
             $shouldBeNull = ($odataOperator === 'eq') !== $negated;
@@ -191,9 +432,15 @@ class FilterExecutor
                 return;
             }
 
-            $methodBase = $boolean === 'where' ? 'where' : 'orWhere';
-            $method = $methodBase . ($shouldBeNull ? 'Null' : 'NotNull');
-            $this->builder->{$method}($qualified);
+            // Having doesn't provide havingNull helpers; use raw.
+            if (in_array($boolean, ['having', 'orHaving'], true)) {
+                $method = $boolean === 'having' ? 'havingRaw' : 'orHavingRaw';
+                $this->builder->{$method}($wrappedColumn . ' ' . ($shouldBeNull ? 'IS NULL' : 'IS NOT NULL'));
+            } else {
+                $methodBase = $boolean === 'where' ? 'where' : 'orWhere';
+                $method = $methodBase . ($shouldBeNull ? 'Null' : 'NotNull');
+                $this->builder->{$method}($qualified);
+            }
             return;
         }
 
@@ -231,12 +478,100 @@ class FilterExecutor
             return;
         }
 
+        if ($qualified instanceof Expression) {
+            // Having/where on expressions must be raw.
+            $method = match ($boolean) {
+                'where' => 'whereRaw',
+                'orWhere' => 'orWhereRaw',
+                'having' => 'havingRaw',
+                'orHaving' => 'orHavingRaw',
+                default => 'whereRaw',
+            };
+            if (is_string($value) && is_numeric($value)) {
+                // For numeric literals, inline to avoid SQLite type quirks with bound strings.
+                $this->builder->{$method}('(' . $wrappedColumn . " {$sqlOperator} {$value})");
+            } else {
+                $this->builder->{$method}('(' . $wrappedColumn . " {$sqlOperator} ?)", [$value]);
+            }
+            return;
+        }
+
         if ($wrap) {
             $this->applyWrappedRaw($boolean, $wrappedColumn . " {$sqlOperator} ?", [$value]);
             return;
         }
 
         $this->builder->{$boolean}($qualified, $sqlOperator, $value);
+    }
+
+    private function buildTransformedExpressionSql(string $innerSql, string $transform): string
+    {
+        $fn = match (strtolower($transform)) {
+            'tolower', 'lower' => 'LOWER',
+            'toupper', 'upper' => 'UPPER',
+            'trim' => 'TRIM',
+            default => null,
+        };
+
+        return $fn ? ($fn . '(' . $innerSql . ')') : $innerSql;
+    }
+
+    private function compileExpressionString(string $expr): string
+    {
+        $expr = trim($expr);
+
+        // unwrap redundant parentheses
+        if (str_starts_with($expr, '(') && str_ends_with($expr, ')')) {
+            $candidate = trim(substr($expr, 1, -1));
+            if ($candidate !== '') {
+                $expr = $candidate;
+            }
+        }
+
+        // literal string
+        if (str_starts_with($expr, "'") && str_ends_with($expr, "'")) {
+            return $expr;
+        }
+
+        // number
+        if (is_numeric($expr)) {
+            return $expr;
+        }
+
+        // function call: name(args)
+        if (preg_match('/^([A-Za-z_][A-Za-z0-9_]*)\((.*)\)$/s', $expr, $m)) {
+            $name = strtolower($m[1]);
+            $argsRaw = $m[2];
+            $args = StringUtils::splitODataExpression($argsRaw, ',');
+            $compiledArgs = array_map(fn (string $a) => $this->compileExpressionString($a), $args);
+
+            $driver = $this->builder->getConnection()->getDriverName();
+
+            return match ($name) {
+                'trim' => 'TRIM(' . ($compiledArgs[0] ?? "''") . ')',
+                'concat' => ($driver === 'sqlite'
+                    ? '(' . implode(' || ', $compiledArgs) . ')'
+                    : 'CONCAT(' . implode(', ', $compiledArgs) . ')'
+                ),
+                default => strtoupper($name) . '(' . implode(', ', $compiledArgs) . ')',
+            };
+        }
+
+        // identifier/property name
+        $mapped = $this->resolveColumn($expr);
+        if ($mapped instanceof Expression) {
+            return $mapped->getValue($this->builder->getQuery()->getGrammar());
+        }
+        if (is_string($mapped)) {
+            $table = $this->builder->getModel()->getTable();
+            $schema = $this->builder->getConnection()->getSchemaBuilder();
+            if ($schema->hasColumn($table, $mapped)) {
+                return $this->builder->getQuery()->getGrammar()->wrap($table . '.' . $mapped);
+            }
+        }
+
+        // Fallback: treat as raw identifier
+        return $expr;
     }
 
     protected function applyLambda(LambdaQueryNode $node, string $boolean): void
@@ -265,7 +600,16 @@ class FilterExecutor
             $method = $boolean === 'where' ? 'whereHas' : 'orWhereHas';
 
             $this->builder->{$method}($relationName, function (Builder $subQuery) use ($node, $aliases) {
-                $exec = new self($this->query, $subQuery, false, $aliases);
+                $exec = new self(
+                    $this->query,
+                    $subQuery,
+                    false,
+                    $aliases,
+                    $this->rootTable,
+                    $this->rootModel,
+                    $this->builder->getModel()->getTable(),
+                    class_basename($this->builder->getModel())
+                );
                 $exec->execute($node->getCondition(), 'where');
             });
 
@@ -275,7 +619,16 @@ class FilterExecutor
         // Lambda 'all' => NOT EXISTS (violating rows)
         $method = $boolean === 'where' ? 'whereDoesntHave' : 'orWhereDoesntHave';
         $handler = function (Builder $subQuery) use ($node, $aliases) {
-            $exec = new self($this->query, $subQuery, false, $aliases);
+            $exec = new self(
+                $this->query,
+                $subQuery,
+                false,
+                $aliases,
+                $this->rootTable,
+                $this->rootModel,
+                $this->builder->getModel()->getTable(),
+                class_basename($this->builder->getModel())
+            );
             $exec->execute($this->negateNode($node->getCondition()), 'where');
         };
 
@@ -289,7 +642,7 @@ class FilterExecutor
         $baseWhereCount = count($query->wheres ?? []);
         $baseWhereBindingsCount = count($query->bindings['where'] ?? []);
 
-        $innerExecutor = new self($this->query, $innerBuilder, false, $this->lambdaAliases);
+        $innerExecutor = new self($this->query, $innerBuilder, false, $this->lambdaAliases, $this->rootTable, $this->rootModel, $this->parentTable, $this->parentModel);
         $innerExecutor->execute($node->getInner(), 'where');
 
         $query = $innerBuilder->getQuery();
@@ -325,6 +678,30 @@ class FilterExecutor
 
     protected function resolveRelationName(string $relation): ?string
     {
+        // Support nested relation paths in lambdas, e.g. "Product/Suppliers"
+        if (str_contains($relation, '/')) {
+            $segments = array_values(array_filter(array_map('trim', explode('/', $relation))));
+            $model = $this->builder->getModel();
+            $currentClass = class_basename($model);
+
+            $resolvedSegments = [];
+            foreach ($segments as $seg) {
+                $resolved = $this->query->isPropertyExpandable($seg, $currentClass);
+                if ($resolved === false) {
+                    return null;
+                }
+                $resolvedSegments[] = $resolved;
+
+                // Advance model context for next segment (best-effort)
+                if (method_exists($model, $resolved)) {
+                    $model = $model->{$resolved}()->getModel();
+                    $currentClass = class_basename($model);
+                }
+            }
+
+            return implode('.', $resolvedSegments);
+        }
+
         $className = class_basename($this->builder->getModel());
         $resolved = $this->query->isPropertyExpandable($relation, $className);
 
@@ -335,7 +712,7 @@ class FilterExecutor
         return $resolved;
     }
 
-    protected function resolveColumn(string $field): string|bool
+    protected function resolveColumn(string $field): string|Expression|bool
     {
         // Skip invalid fields (used for invalid filter syntax)
         if ($field === '__invalid__') {
@@ -455,13 +832,12 @@ class FilterExecutor
 
         if ($node instanceof LambdaQueryNode) {
             if ($node->getLambda() === 'all') {
-                return new NotQueryNode(
-                    new LambdaQueryNode(
-                        $node->getRelation(),
-                        'any',
-                        $node->getCondition(),
-                        $node->getParameter()
-                    )
+                // ¬(all(cond)) == any(¬cond)
+                return new LambdaQueryNode(
+                    $node->getRelation(),
+                    'any',
+                    $this->negateNode($node->getCondition()),
+                    $node->getParameter()
                 );
             }
 
@@ -725,7 +1101,7 @@ class FilterExecutor
         }
 
         $builder = $this->builder->getModel()->newQuery();
-        $executor = new self($this->query, $builder, false, $this->lambdaAliases);
+        $executor = new self($this->query, $builder, false, $this->lambdaAliases, $this->rootTable, $this->rootModel, $this->parentTable, $this->parentModel);
         $executor->execute($node, 'where');
 
         $query = $builder->getQuery();
