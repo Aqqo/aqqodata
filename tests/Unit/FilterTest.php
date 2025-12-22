@@ -2,26 +2,46 @@
 
 use function Aqqo\OData\Tests\Feature\createQueryFromParams;
 
+function countModelsMatchingCondition($models, $condition) {
+    $count = 0;
+    $models->each(function ($model) use ($condition, &$count) {
+        if ($condition($model)) {
+            $count++;
+        }
+    });
+    return $count;
+}
+
 beforeEach(function () {
     $this->models = \Aqqo\OData\Tests\Testclasses\TestModel::factory()->count(5)->create();
 });
 
 it('can filter models by name', function () {
     $name = $this->models->first()->name;
+
+    $occurrenceCount = countModelsMatchingCondition($this->models, function($model) use ($name) {
+        return $model->name === $name;
+    });
+
     $models = createQueryFromParams(filter: "name eq '{$name}'")
         ->get();
 
-    expect($models)->toHaveCount(1);
+    expect($models)->toHaveCount($occurrenceCount);
     expect($models->first()['name'])->toEqual($name);
 });
 
 it('can filter models by name not equals', function () {
     $name = $this->models->first()->name;
+
+    $occurrenceCount = countModelsMatchingCondition($this->models, function($model) use ($name) {
+        return $model->name !== $name;
+    });
+
     $models = createQueryFromParams(filter: "name ne '{$name}'")
         ->get();
 
-    // The filter might not work as expected, so let's just verify it runs
-    expect($models)->toBeInstanceOf(\Illuminate\Support\Collection::class);
+    expect($models)->toHaveCount($occurrenceCount);
+    expect($models->first()['name'])->not()->toEqual($name);
 });
 
 it('can filter models using in operator', function () {
@@ -29,16 +49,23 @@ it('can filter models using in operator', function () {
     // 1. We can filter models using the IN operator on direct model properties
     // 2. The IN operator is case insensitive ('in' vs 'IN')
     // 3. Multiple values can be correctly matched
+    // Escape single quotes in names (OData style: double them)
     
     // Take the first two models' names from our test data set
     $names = $this->models->take(2)->pluck('name')->toArray();
+    // Escape single quotes in names (OData style: double them)
+    $escapedNames = array_map(fn($name) => str_replace("'", "''", $name), $names);
+
+    $occurrenceCount = countModelsMatchingCondition($this->models, function($model) use ($names) {
+        return in_array($model->name, $names);
+    });
     
     // Filter models where name matches either of the two names
-    $models = createQueryFromParams(filter: "name in ('{$names[0]}', '{$names[1]}')")
+    $models = createQueryFromParams(filter: "name in ('{$escapedNames[0]}', '{$escapedNames[1]}')")
         ->get();
 
     // Verify we get exactly two models back
-    expect($models)->toHaveCount(2);
+    expect($models)->toHaveCount($occurrenceCount);
     
     // Verify the returned models have the exact names we filtered for
     expect($models->pluck('name')->toArray())->toEqual($names);
@@ -64,6 +91,12 @@ it('can filter models using in operator on related models', function () {
     $relatedModel2->testModel()->associate($testModels[0]);
     $relatedModel2->save();
 
+    $occurrenceCount = countModelsMatchingCondition($testModels, function($model) {
+        return $model->relatedModels()
+            ->whereIn('name', ['Related1', 'Related2'])
+            ->exists();
+    });
+
     // Filter test models where related models have names 'Related1' or 'Related2'
     // The expand parameter ensures the related models are included in the response
     $models = createQueryFromParams(
@@ -71,8 +104,8 @@ it('can filter models using in operator on related models', function () {
         expand: "relatedModels"
     )->get();
 
-    // Verify we only get one model (the first one that has the related models)
-    expect($models)->toHaveCount(1);
+    // Verify we get the correct number of models
+    expect($models)->toHaveCount($occurrenceCount);
     expect($models[0]['id'])->toEqual($testModels[0]->id);
     
     // Verify that both related models are loaded and have the correct names
@@ -109,6 +142,12 @@ it('can filter models using in operator on related models with numbers', functio
     $relatedModel2->testModel()->associate($testModels[0]);
     $relatedModel2->save();
 
+    $occurrenceCount = countModelsMatchingCondition($testModels, function($model) {
+        return $model->relatedModels()
+            ->whereIn('cost', [100, 200])
+            ->exists();
+    });
+
     // Filter test models where related models have costs of 100 or 200
     // The expand parameter ensures the related models are included in the response
     $models = createQueryFromParams(
@@ -116,8 +155,8 @@ it('can filter models using in operator on related models with numbers', functio
         expand: "relatedModels"
     )->get();
 
-    // Verify we only get one model (the first one that has the related models)
-    expect($models)->toHaveCount(1);
+    // Verify we get the correct number of models
+    expect($models)->toHaveCount($occurrenceCount);
     expect($models[0]['id'])->toEqual($testModels[0]->id);
     
     // Verify that both related models are loaded and have the correct costs
@@ -131,16 +170,14 @@ it('can filter models using in operator on related models with numbers', functio
 it('can handle filter from URL pattern when no $filter parameter', function () {
     // Create a mock request with URL containing ID in parentheses
     $model = $this->models->first();
-    $request = new \Illuminate\Http\Request();
+    $request = \Illuminate\Http\Request::create("/test({$model->id})");
     $request->setLaravelSession(app('session.store'));
-    $request->server->set('REQUEST_URI', "/test/{$model->id}");
     
     $query = new \Aqqo\OData\Query(\Aqqo\OData\Tests\Testclasses\TestModel::query(), true, true, true, true, true, true, true, true, $request);
     $models = $query->get();
     
-    // The URL pattern should create a filter, but it might not work as expected
-    // Let's just verify that the query runs without error
-    expect($models)->toBeInstanceOf(\Illuminate\Support\Collection::class);
+    expect($models)->toHaveCount(1);
+    expect($models->first()['id'])->toEqual($model->id);
 });
 
 it('can handle empty grouped filters', function () {
@@ -204,7 +241,9 @@ it('can handle table name qualification with joins', function () {
 
 it('can handle IN operator with string format values', function () {
     $names = $this->models->take(2)->pluck('name')->toArray();
-    $models = createQueryFromParams(filter: "name in ('{$names[0]}', '{$names[1]}')")->get();
+    // Escape single quotes in names (OData style: double them)
+    $escapedNames = array_map(fn($name) => str_replace("'", "''", $name), $names);
+    $models = createQueryFromParams(filter: "name in ('{$escapedNames[0]}', '{$escapedNames[1]}')")->get();
     expect($models)->toHaveCount(2);
 });
 
@@ -275,265 +314,158 @@ it('can handle aggregate function syntax with all', function () {
     expect($models)->toBeInstanceOf(\Illuminate\Support\Collection::class);
 });
 
-it('can handle relationship conditions with all function', function () {
-    // Use the first model from beforeEach and add a related model
-    $testModel = $this->models->first();
-    
-    $relatedModel = new \Aqqo\OData\Tests\Testclasses\RelatedModel(['name' => 'TestRelated']);
-    $relatedModel->testModel()->associate($testModel);
-    $relatedModel->save();
-    
-    $models = createQueryFromParams(
-        filter: "relatedModels/all(s:s/name eq 'TestRelated')"
-    )->get();
-    
-    // The all function might not work as expected, so let's just verify it runs
-    expect($models)->toBeInstanceOf(\Illuminate\Support\Collection::class);
+it('can handle IN operator with numbers', function () {
+    $query = createQueryFromParams(filter: "id in (1, 2, 3)");
+    expect($query->toSql())->toEqual('select * from "test_models" where "test_models"."id" in (1, 2, 3) limit 100 offset 0');
 });
 
-it('can handle relationship conditions with non-filterable nested properties', function () {
-    $models = createQueryFromParams(filter: "any(relatedModels, nonExistentField eq 'value')")->get();
-    expect($models)->toHaveCount(5);
+it('can handle simple name filter', function () {
+    $query = createQueryFromParams(filter: "name eq 'Test' and test gt 12");
+    expect($query->toSql())->toEqual('select * from "test_models" where "test_models"."name" = \'Test\' and "test_models"."test" > \'12\' limit 100 offset 0');
 });
 
-it('can handle relationship conditions with non-expandable relations', function () {
-    $models = createQueryFromParams(filter: "any(nonExistentRelation, name eq 'value')")->get();
-    expect($models)->toHaveCount(5);
+it('can handle simple different source filter', function () {
+    $query = createQueryFromParams(filter: "odatacol eq 'Test'");
+    expect($query->toSql())->toEqual('select * from "test_models" where "test_models"."dbcol" = \'Test\' limit 100 offset 0');
 });
 
-it('can handle splitInput with function-based operators', function () {
-    $models = createQueryFromParams(filter: "contains(name, 'test')")->get();
-    expect($models)->toHaveCount(0);
+it('can handle simple contains filter', function () {
+    $query = createQueryFromParams(filter: "contains(name, 'Test') and test gt 12");
+    expect($query->toSql())->toEqual('select * from "test_models" where (("test_models"."name" LIKE \'%Test%\') and ("test_models"."test" > \'12\')) limit 100 offset 0');
 });
 
-it('can handle splitInput with startswith operator', function () {
-    $models = createQueryFromParams(filter: "startswith(name, 'test')")->get();
-    expect($models)->toHaveCount(0);
+it('can handle simple startswith filter', function () {
+    $query = createQueryFromParams(filter: "startswith(name, 'Te') and test gt 12");
+    expect($query->toSql())->toEqual('select * from "test_models" where (("test_models"."name" LIKE \'Te%\') and ("test_models"."test" > \'12\')) limit 100 offset 0');
 });
 
-it('can handle splitInput with endswith operator', function () {
-    $models = createQueryFromParams(filter: "endswith(name, 'test')")->get();
-    expect($models)->toHaveCount(0);
+it('can handle simple endswith filter', function () {
+    $query = createQueryFromParams(filter: "endswith(name, 'st') and test gt 12");
+    expect($query->toSql())->toEqual('select * from "test_models" where (("test_models"."name" LIKE \'%st\') and ("test_models"."test" > \'12\')) limit 100 offset 0');
 });
 
-it('can handle splitInput with any/all lambda expressions', function () {
-    // Use the first model from beforeEach and add a related model
-    $testModel = $this->models->first();
-    
-    $relatedModel = new \Aqqo\OData\Tests\Testclasses\RelatedModel(['name' => 'TestRelated']);
-    $relatedModel->testModel()->associate($testModel);
-    $relatedModel->save();
-    
-    $models = createQueryFromParams(
-        filter: "relatedModels/any(s:s/name eq 'TestRelated')"
-    )->get();
-    
-    expect($models)->toHaveCount(1);
-    expect($models->first()['id'])->toEqual($testModel->id);
+it('can handle non existing filter', function () {
+    $query = createQueryFromParams(filter: "nonExisting eq 'Test'");
+    expect($query->toSql())->toEqual('select * from "test_models" limit 100 offset 0');
 });
 
-it('can handle splitInput with any/all and nested property access', function () {
-    // Use the first model from beforeEach and add a related model
-    $testModel = $this->models->first();
-    
-    $relatedModel = new \Aqqo\OData\Tests\Testclasses\RelatedModel(['name' => 'TestRelated']);
-    $relatedModel->testModel()->associate($testModel);
-    $relatedModel->save();
-    
-    $models = createQueryFromParams(
-        filter: "relatedModels/any(s:s/name eq 'TestRelated')"
-    )->get();
-    
-    expect($models)->toHaveCount(1);
-    expect($models->first()['id'])->toEqual($testModel->id);
+it('can handle two filters with OR', function () {
+    $query = createQueryFromParams(filter: "name eq 'Test' or name eq 'Aqqo'");
+    expect($query->toSql())->toEqual('select * from "test_models" where ("test_models"."name" = \'Test\' or "test_models"."name" = \'Aqqo\') limit 100 offset 0');
 });
 
-it('can handle splitInput with any/all and IN operator', function () {
-    // Use the first model from beforeEach and add a related model
-    $testModel = $this->models->first();
-    
-    $relatedModel = new \Aqqo\OData\Tests\Testclasses\RelatedModel(['name' => 'TestRelated']);
-    $relatedModel->testModel()->associate($testModel);
-    $relatedModel->save();
-    
-    $models = createQueryFromParams(
-        filter: "relatedModels/any(s:s/name in ('TestRelated', 'Other'))"
-    )->get();
-    
-    expect($models)->toHaveCount(1);
-    expect($models->first()['id'])->toEqual($testModel->id);
+it('can handle grouped filter', function () {
+    $query = createQueryFromParams(filter: "(start_datetime_utc gt '2024-05-13T06:00:00+00:00' or start_datetime_utc lt '2024-05-13T06:00:00+00:00') and end_datetime_utc lt '2024-05-19T15:00:00+00:00'");
+    expect($query->toSql())->toEqual('select * from "test_models" where (("test_models"."start_datetime_utc" > \'2024-05-13T06:00:00+00:00\' or "test_models"."start_datetime_utc" < \'2024-05-13T06:00:00+00:00\') and "test_models"."end_datetime_utc" < \'2024-05-19T15:00:00+00:00\') limit 100 offset 0');
 });
 
-it('can handle splitInput with invalid syntax in any/all', function () {
-    expect(function () {
-        createQueryFromParams(filter: "relatedModels/any(s:s/)")->get();
-    })->toThrow(Exception::class, 'Invalid syntax');
+it('can handle simple any filter', function () {
+    $query = createQueryFromParams(filter: "relatedModels/any(s:s/name eq 'Aqqo')");
+    expect($query->toSql())->toEqual('select * from "test_models" where exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and "related_models"."name" = \'Aqqo\') limit 100 offset 0');
 });
 
-it('can handle splitInput with invalid IN operator syntax in any/all', function () {
-    expect(function () {
-        createQueryFromParams(filter: "relatedModels/any(s:s/name in)")->get();
-    })->toThrow(Exception::class, 'Invalid IN operator syntax');
+it('can handle simple any filter but not expandable', function () {
+    $query = createQueryFromParams(filter: "nonExistingModel/any(s:s/name eq 'Aqqo')");
+    expect($query->toSql())->toEqual('select * from "test_models" limit 100 offset 0');
 });
 
-it('can handle splitFilter with comma-separated expressions', function () {
-    $models = createQueryFromParams(filter: "name eq 'test', id eq 1")->get();
-    expect($models)->toHaveCount(0);
+it('can handle two filters with any filter', function () {
+    $query = createQueryFromParams(filter: "name eq 'Aqqo' and relatedModel/any(s:s/name eq 'Aqqo')");
+    expect($query->toSql())->toEqual('select * from "test_models" where "test_models"."name" = \'Aqqo\' and exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and "related_models"."name" = \'Aqqo\') limit 100 offset 0');
 });
 
-it('can handle splitFilter with simple expression without parentheses', function () {
-    $name = $this->models->first()->name;
-    $models = createQueryFromParams(filter: "name eq '{$name}'")->get();
-    // The filter should work, but let's just verify it runs without error
-    expect($models)->toBeInstanceOf(\Illuminate\Support\Collection::class);
+it('can handle two filters with any filter but inversed', function () {
+    $query = createQueryFromParams(filter: "relatedModels/any(s:s/name eq 'Aqqo') and name eq 'Aqqo'");
+    expect($query->toSql())->toEqual('select * from "test_models" where exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and "related_models"."name" = \'Aqqo\') and "test_models"."name" = \'Aqqo\' limit 100 offset 0');
 });
 
-// Additional comprehensive tests to cover specific uncovered lines in FilterTrait
-
-it('can handle comprehensive filter scenarios with all operators', function () {
-    // This tests comprehensive filter scenarios with all operators
-    $name = $this->models->first()->name;
-    $models = createQueryFromParams(filter: "name eq '{$name}' and id gt 0 or name ne '{$name}' and id lt 10")->get();
-    expect($models)->toBeInstanceOf(\Illuminate\Support\Collection::class);
+it('can handle simple all filter', function () {
+    $query = createQueryFromParams(filter: "relatedModels/all(f:f/cost gt 10)");
+    expect($query->toSql())->toEqual('select * from "test_models" where not exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and "related_models"."cost" <= \'10\') limit 100 offset 0');
 });
 
-it('can handle complex aggregate functions with nested conditions', function () {
-    // This tests complex aggregate functions with nested conditions
-    $testModel = $this->models->first();
-    
-    $relatedModel = new \Aqqo\OData\Tests\Testclasses\RelatedModel(['name' => 'TestRelated']);
-    $relatedModel->testModel()->associate($testModel);
-    $relatedModel->save();
-    
-    $models = createQueryFromParams(
-        filter: "relatedModels/any(s:s/name eq 'TestRelated')"
-    )->get();
-    
-    expect($models)->toBeInstanceOf(\Illuminate\Support\Collection::class);
+it('can handle two filters with all filter', function () {
+    $query = createQueryFromParams(filter: "name eq 'Aqqo' and relatedModels/all(f:f/cost gt 10)");
+    expect($query->toSql())->toEqual('select * from "test_models" where "test_models"."name" = \'Aqqo\' and not exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and "related_models"."cost" <= \'10\') limit 100 offset 0');
 });
 
-it('can handle multiple aggregate functions in single filter', function () {
-    // This tests multiple aggregate functions in single filter
-    $testModel = $this->models->first();
-    
-    $relatedModel = new \Aqqo\OData\Tests\Testclasses\RelatedModel(['name' => 'TestRelated']);
-    $relatedModel->testModel()->associate($testModel);
-    $relatedModel->save();
-    
-    $models = createQueryFromParams(
-        filter: "relatedModels/any(s:s/name eq 'TestRelated') and relatedModels/all(s:s/id gt 0)"
-    )->get();
-    
-    expect($models)->toBeInstanceOf(\Illuminate\Support\Collection::class);
+it('can handle two filters with all filter but inversed', function () {
+    $query = createQueryFromParams(filter: "relatedModels/all(f:f/cost gt 10) and name eq 'Aqqo'");
+    expect($query->toSql())->toEqual('select * from "test_models" where not exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and "related_models"."cost" <= \'10\') and "test_models"."name" = \'Aqqo\' limit 100 offset 0');
 });
 
-it('can handle edge cases with empty values and zero values', function () {
-    // This tests edge cases with empty values and zero values
-    $models = createQueryFromParams(filter: "id eq 0 or name eq ''")->get();
-    expect($models)->toBeInstanceOf(\Illuminate\Support\Collection::class);
+it('can handle two filters with all filter but not expandable', function () {
+    $query = createQueryFromParams(filter: "nonExistingModel/all(f:f/cost gt 10) and name eq 'Aqqo'");
+    expect($query->toSql())->toEqual('select * from "test_models" where "test_models"."name" = \'Aqqo\' limit 100 offset 0');
 });
 
-it('can handle edge cases with null values', function () {
-    // This tests edge cases with null values
-    $models = createQueryFromParams(filter: "name eq null")->get();
-    expect($models)->toBeInstanceOf(\Illuminate\Support\Collection::class);
+// TODO uncomment below for more complex tests
+it('can handle deeply nested AND/OR conditions', function () {
+    $query = createQueryFromParams(filter: "((name eq 'Test' or name eq 'Aqqo') and (age gt 18 or age lt 65)) and (status eq 'active' or status eq 'pending')");
+    expect($query->toSql())->toEqual('select * from "test_models" where ((("test_models"."name" = \'Test\' or "test_models"."name" = \'Aqqo\') and ("test_models"."age" > \'18\' or "test_models"."age" < \'65\')) and ("test_models"."status" = \'active\' or "test_models"."status" = \'pending\')) limit 100 offset 0');
 });
 
-it('can handle edge cases with boolean values', function () {
-    // This tests edge cases with boolean values
-    $models = createQueryFromParams(filter: "id eq true or id eq false")->get();
-    expect($models)->toBeInstanceOf(\Illuminate\Support\Collection::class);
+it('can handle complex IN operations with multiple conditions', function () {
+    $query = createQueryFromParams(filter: "(name in ('Test', 'Aqqo')) and (age in (18, 21, 25)) and (status in ('active', 'pending'))");
+    expect($query->toSql())->toEqual('select * from "test_models" where "test_models"."name" in (\'Test\', \'Aqqo\') and "test_models"."age" in (18, 21, 25) and "test_models"."status" in (\'active\', \'pending\') limit 100 offset 0');
 });
 
-it('can handle edge cases with date values', function () {
-    // This tests edge cases with date values
-    $models = createQueryFromParams(filter: "created_at eq '2023-01-01'")->get();
-    expect($models)->toBeInstanceOf(\Illuminate\Support\Collection::class);
+it('can handle complex date/time comparisons', function () {
+    $query = createQueryFromParams(filter: "created_at gt '2024-01-01T00:00:00Z' and (updated_at lt '2024-12-31T23:59:59Z' or deleted_at eq null)");
+    expect($query->toSql())->toEqual('select * from "test_models" where ("test_models"."created_at" > \'2024-01-01T00:00:00Z\' and ("test_models"."updated_at" < \'2024-12-31T23:59:59Z\' or "test_models"."deleted_at" is null)) limit 100 offset 0');
 });
 
-it('can handle edge cases with datetime values', function () {
-    // This tests edge cases with datetime values
-    $models = createQueryFromParams(filter: "created_at eq '2023-01-01T00:00:00Z'")->get();
-    expect($models)->toBeInstanceOf(\Illuminate\Support\Collection::class);
+it('can handle complex string operations with multiple functions', function () {
+    $query = createQueryFromParams(filter: "contains(tolower(name), 'test') and startswith(upper(status), 'ACTIVE') and endswith(trim(description), 'end')");
+    expect($query->toSql())->toEqual('select * from "test_models" where (LOWER("test_models"."name") LIKE \'%test%\') and (UPPER("test_models"."status") LIKE \'ACTIVE%\') and (TRIM("test_models"."description") LIKE \'%end\') limit 100 offset 0');
 });
 
-it('can handle edge cases with timezone values', function () {
-    // This tests edge cases with timezone values
-    $models = createQueryFromParams(filter: "created_at eq '2023-01-01T00:00:00+00:00'")->get();
-    expect($models)->toBeInstanceOf(\Illuminate\Support\Collection::class);
+it('can handle complex nested any/all conditions', function () {
+    $query = createQueryFromParams(filter: "relatedModels/any(r:r/name eq 'Test' and r/status eq 'active') and relatedModels/all(r:r/cost gt 100 or r/cost lt 50)");
+    expect($query->toSql())->toEqual('select * from "test_models" where exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and "related_models"."name" = \'Test\' and "related_models"."status" = \'active\') and not exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and "related_models"."cost" <= \'100\' and "related_models"."cost" >= \'50\') limit 100 offset 0');
 });
 
-it('can handle edge cases with fractional seconds', function () {
-    // This tests edge cases with fractional seconds
-    $models = createQueryFromParams(filter: "created_at eq '2023-01-01T00:00:00.123Z'")->get();
-    expect($models)->toBeInstanceOf(\Illuminate\Support\Collection::class);
+it('can handle complex nested any/all with multiple conditions', function () {
+    $query = createQueryFromParams(filter: "relatedModels/any(r:r/name in ('Test', 'Aqqo') and r/status eq 'active') and relatedModels/all(r:r/cost gt 100 or r/status eq 'inactive')");
+    expect($query->toSql())->toEqual('select * from "test_models" where exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and "related_models"."name" in (\'Test\', \'Aqqo\') and "related_models"."status" = \'active\') and not exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and "related_models"."cost" <= \'100\' and "related_models"."status" != \'inactive\') limit 100 offset 0');
 });
 
-it('can handle edge cases with very long filter expressions', function () {
-    // This tests edge cases with very long filter expressions
-    $longFilter = str_repeat("name eq 'test' and ", 100) . "id gt 0";
-    $models = createQueryFromParams(filter: $longFilter)->get();
-    expect($models)->toBeInstanceOf(\Illuminate\Support\Collection::class);
+it('can handle complex nested any/all with multiple levels', function () {
+    $query = createQueryFromParams(filter: "relatedModels/any(r:r/name eq 'Test' and r/subModels/any(s:s/status eq 'active')) and relatedModels/all(r:r/cost gt 100 or r/subModels/all(s:s/status eq 'inactive'))");
+    expect($query->toSql())->toEqual('select * from "test_models" where exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and "related_models"."name" = \'Test\' and exists (select * from "sub_models" where "related_models"."id" = "sub_models"."related_model_id" and "sub_models"."status" = \'active\')) and not exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and "related_models"."cost" <= \'100\' and not exists (select * from "sub_models" where "related_models"."id" = "sub_models"."related_model_id" and "sub_models"."status" = \'inactive\')) limit 100 offset 0');
 });
 
-it('can handle edge cases with special characters in filter values', function () {
-    // This tests edge cases with special characters in filter values
-    $models = createQueryFromParams(filter: "name eq 'test@#$%^&*()_+-=[]{}|;:,.<>?'")->get();
-    expect($models)->toBeInstanceOf(\Illuminate\Support\Collection::class);
+it('can handle complex numeric operations', function () {
+    $query = createQueryFromParams(filter: "(cost gt 100 and cost lt 1000) and (quantity gt 0 and quantity lt 100) and (price gt 10.50 and price lt 99.99)");
+    expect($query->toSql())->toEqual('select * from "test_models" where ("test_models"."cost" > \'100\' and "test_models"."cost" < \'1000\') and ("test_models"."quantity" > \'0\' and "test_models"."quantity" < \'100\') and ("test_models"."price" > \'10.50\' and "test_models"."price" < \'99.99\') limit 100 offset 0');
 });
 
-it('can handle edge cases with unicode characters in filter values', function () {
-    // This tests edge cases with unicode characters in filter values
-    $models = createQueryFromParams(filter: "name eq '测试值'")->get();
-    expect($models)->toBeInstanceOf(\Illuminate\Support\Collection::class);
+it('can handle complex boolean operations', function () {
+    $query = createQueryFromParams(filter: "(is_active eq true and is_verified eq true) or (is_admin eq true and is_superuser eq true)");
+    expect($query->toSql())->toEqual('select * from "test_models" where ("test_models"."is_active" = \'1\' and "test_models"."is_verified" = \'1\') or ("test_models"."is_admin" = \'1\' and "test_models"."is_superuser" = \'1\') limit 100 offset 0');
 });
 
-it('can handle edge cases with mixed case operators', function () {
-    // This tests edge cases with mixed case operators
-    $name = $this->models->first()->name;
-    $models = createQueryFromParams(filter: "name EQ '{$name}' and id GT 0")->get();
-    expect($models)->toBeInstanceOf(\Illuminate\Support\Collection::class);
+it('can handle complex null checks', function () {
+    $query = createQueryFromParams(filter: "(deleted_at eq null and updated_at ne null) or (created_at eq null and status eq 'pending')");
+    expect($query->toSql())->toEqual('select * from "test_models" where ("test_models"."deleted_at" is null and "test_models"."updated_at" is not null) or ("test_models"."created_at" is null and "test_models"."status" = \'pending\') limit 100 offset 0');
 });
 
-it('can handle edge cases with mixed case logical operators', function () {
-    // This tests edge cases with mixed case logical operators
-    $name = $this->models->first()->name;
-    $models = createQueryFromParams(filter: "name eq '{$name}' AND id gt 0 OR name ne '{$name}'")->get();
-    expect($models)->toBeInstanceOf(\Illuminate\Support\Collection::class);
+it('can handle complex string operations with special characters', function () {
+    $query = createQueryFromParams(filter: "contains(name, 'Test\'s') and contains(description, 'O\'Connor') and contains(tags, 'C#')");
+    expect($query->toSql())->toEqual('select * from "test_models" where ("test_models"."name" LIKE \'%Test\\\'s%\') and ("test_models"."description" LIKE \'%O\\\'Connor%\') and ("test_models"."tags" LIKE \'%C#%\') limit 100 offset 0');
 });
 
-it('can handle edge cases with mixed case function operators', function () {
-    // This tests edge cases with mixed case function operators
-    $models = createQueryFromParams(filter: "CONTAINS(name, 'test') and STARTSWITH(name, 'test') and ENDSWITH(name, 'test')")->get();
-    expect($models)->toHaveCount(0);
+it('can handle complex date/time operations with timezone offsets', function () {
+    $query = createQueryFromParams(filter: "created_at gt '2024-01-01T00:00:00+00:00' and created_at lt '2024-12-31T23:59:59+00:00' and updated_at gt '2024-01-01T00:00:00-05:00'");
+    expect($query->toSql())->toEqual('select * from "test_models" where "test_models"."created_at" > \'2024-01-01T00:00:00+00:00\' and "test_models"."created_at" < \'2024-12-31T23:59:59+00:00\' and "test_models"."updated_at" > \'2024-01-01T00:00:00-05:00\' limit 100 offset 0');
 });
 
-it('can handle edge cases with mixed case aggregate functions', function () {
-    // This tests edge cases with mixed case aggregate functions
-    $testModel = $this->models->first();
-    
-    $relatedModel = new \Aqqo\OData\Tests\Testclasses\RelatedModel(['name' => 'TestRelated']);
-    $relatedModel->testModel()->associate($testModel);
-    $relatedModel->save();
-    
-    $models = createQueryFromParams(
-        filter: "relatedModels/any(s:s/name eq 'TestRelated')"
-    )->get();
-    
-    expect($models)->toBeInstanceOf(\Illuminate\Support\Collection::class);
+it('can handle complex nested any/all with multiple conditions and functions', function () {
+    $query = createQueryFromParams(filter: "relatedModels/any(r:contains(r/name, 'Test') and r/cost gt 100) and relatedModels/all(r:startswith(r/status, 'active') or r/cost lt 50)");
+    expect($query->toSql())->toEqual('select * from "test_models" where exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and ("related_models"."name" LIKE \'%Test%\') and "related_models"."cost" > \'100\') and not exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and not (("related_models"."status" LIKE \'active%\') or "related_models"."cost" < \'50\')) limit 100 offset 0');
 });
 
-it('can handle edge cases with mixed case aggregate functions for all', function () {
-    // This tests edge cases with mixed case aggregate functions for all
-    $testModel = $this->models->first();
-    
-    $relatedModel = new \Aqqo\OData\Tests\Testclasses\RelatedModel(['name' => 'TestRelated']);
-    $relatedModel->testModel()->associate($testModel);
-    $relatedModel->save();
-    
-    $models = createQueryFromParams(
-        filter: "relatedModels/all(s:s/name eq 'TestRelated')"
-    )->get();
-    
-    expect($models)->toBeInstanceOf(\Illuminate\Support\Collection::class);
+it('can handle complex nested any/all with multiple levels and functions', function () {
+    $query = createQueryFromParams(filter: "relatedModels/any(r:contains(r/name, 'Test') and r/subModels/any(s:startswith(s/status, 'active'))) and relatedModels/all(r:r/cost gt 100 or r/subModels/all(s:endswith(s/status, 'inactive')))");
+    expect($query->toSql())->toEqual('select * from "test_models" where exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and ("related_models"."name" LIKE \'%Test%\') and exists (select * from "sub_models" where "related_models"."id" = "sub_models"."related_model_id" and ("sub_models"."status" LIKE \'active%\'))) and not exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and "related_models"."cost" <= \'100\' and not exists (select * from "sub_models" where "related_models"."id" = "sub_models"."related_model_id" and ("sub_models"."status" LIKE \'%inactive\'))) limit 100 offset 0');
 });

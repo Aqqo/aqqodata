@@ -261,6 +261,31 @@ describe('AttributesTrait', function () {
         expect($query->toSql())->toBeString();
     });
 
+    it('handles isPropertyExpandable with empty className', function () {
+        // This targets AttributesTrait line 174
+        $query = createQueryFromParams();
+        $result = $query->isPropertyExpandable('relatedModel');
+        expect($result)->toBe('relatedModel');
+    });
+
+    it('handles isPropertyExpandable returning currentClass for nested property', function () {
+        // Targets line 174: Return $currentClass when property with dots is found in expandables
+        $query = createQueryFromParams();
+        // Test nested property that exists in expandables
+        $result = $query->isPropertyExpandable('relatedModel.nestedRelatedModels', 'TestModel');
+        // Should return the currentClass (singularized lowercase of the last segment's relation)
+        expect($result)->not()->toBeFalse();
+        expect($result)->toBeString();
+    });
+
+    it('handles empty filterables array', function () {
+        // This targets AttributesTrait line 136
+        // We need a model with no ODataProperty attributes
+        $query = \Aqqo\OData\Query::for(\Aqqo\OData\Tests\Testclasses\AppendModel::class);
+        $result = $query->isPropertyFilterable('any');
+        expect($result)->toBeTrue();
+    });
+
     it('tests property access with specific class name', function () {
         // This tests the className parameter in various isProperty methods
         $query = createQueryFromParams(

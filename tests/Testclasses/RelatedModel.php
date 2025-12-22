@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[ODataProperty('name')]
 #[ODataProperty('cost')]
+#[ODataProperty('status')]
 class RelatedModel extends Model
 {
     protected $guarded = [];
@@ -26,6 +27,12 @@ class RelatedModel extends Model
     public function nestedRelatedModels(): HasMany
     {
         return $this->hasMany(NestedRelatedModel::class);
+    }
+
+    #[ODataRelationship(name: 'subModels', source: 'nestedRelatedModels')]
+    public function subModels(): HasMany
+    {
+        return $this->nestedRelatedModels();
     }
 
     public function scopeNamed(Builder $query, string $name): Builder

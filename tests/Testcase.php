@@ -63,7 +63,7 @@ class Testcase extends \Orchestra\Testbench\TestCase
             $table->integer('cost')->nullable();
         });
 
-        $app['db']->connection()->getSchemaBuilder()->create('nested_related_models', function (Blueprint $table) {
+        $app['db']->connection()->getSchemaBuilder()->create('sub_models', function (Blueprint $table) {
             $table->increments('id');
             $table->integer('related_model_id');
             $table->string('name');

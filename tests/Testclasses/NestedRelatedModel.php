@@ -8,9 +8,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[ODataProperty('name')]
 #[ODataProperty('cost')]
+#[ODataProperty('status')]
 class NestedRelatedModel extends Model
 {
     protected $guarded = [];
+
+    protected $table = 'sub_models';
 
     public $timestamps = false;
 

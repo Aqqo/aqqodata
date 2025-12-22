@@ -67,6 +67,11 @@ describe('StringUtils', function () {
                 ->toThrow(\InvalidArgumentException::class, 'Unbalanced parentheses in OData expression');
         });
 
+        it('throws exception for too many closing parentheses', function () {
+            expect(fn() => StringUtils::splitODataExpression('a(b,c))'))
+                ->toThrow(\InvalidArgumentException::class, 'Unbalanced parentheses in OData expression');
+        });
+
         it('throws exception for unbalanced quotes', function () {
             expect(fn() => StringUtils::splitODataExpression("'unclosed"))
                 ->toThrow(\InvalidArgumentException::class, 'Unbalanced quotes in OData expression');
