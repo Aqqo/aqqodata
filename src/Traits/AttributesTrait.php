@@ -45,13 +45,11 @@ trait AttributesTrait
      */
     private function handleModel(Builder $builder): void
     {
-        $reflectionClass = new \ReflectionClass($builder->getModel());
+        $model = $builder->getModel();
+        $reflectionClass = new \ReflectionClass($model);
         $shortName = strtolower($reflectionClass->getShortName());
 
-        foreach ($reflectionClass->getAttributes(
-            ODataProperty::class,
-            \ReflectionAttribute::IS_INSTANCEOF
-        ) as $attribute) {
+        foreach ($this->getODataPropertyAttributes($reflectionClass) as $attribute) {
             /** @var ODataProperty $instance */
             $instance = $attribute->newInstance();
 
@@ -59,8 +57,9 @@ trait AttributesTrait
             $odata_column = $instance->getName();
 
             // Support for dynamic resolver.
-            if (empty($instance->getSource()) && $reflectionClass->hasMethod('oData' . ucfirst(strtolower($instance->getName())) . 'Resolver')) {
-                $db_column = $builder->getModel()->{'oData' . ucfirst($instance->getName()) . 'Resolver'}();
+            $resolver_method = 'oData'.ucfirst($instance->getName()).'Resolver';
+            if (empty($instance->getSource()) && method_exists($model, $resolver_method)) {
+                $db_column = $model->{$resolver_method}();
             }
 
             if ($instance->isSelectable()) {
@@ -99,6 +98,33 @@ trait AttributesTrait
                 }
             }
         }
+    }
+
+    /**
+     * Get ODataProperty attributes for a class, including inherited attributes from parent classes.
+     *
+     * Child class attributes are returned last so they can override parent mappings.
+     *
+     * @param \ReflectionClass<object> $reflectionClass
+     * @return array<int, \ReflectionAttribute>
+     */
+    private function getODataPropertyAttributes(\ReflectionClass $reflectionClass): array
+    {
+        $class_hierarchy = [];
+        $current = $reflectionClass;
+        while ($current !== false) {
+            $class_hierarchy[] = $current;
+            $current = $current->getParentClass();
+        }
+
+        $attributes = [];
+        foreach (array_reverse($class_hierarchy) as $class_reflection) {
+            foreach ($class_reflection->getAttributes(ODataProperty::class, \ReflectionAttribute::IS_INSTANCEOF) as $attribute) {
+                $attributes[] = $attribute;
+            }
+        }
+
+        return $attributes;
     }
 
     /**
