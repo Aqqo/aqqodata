@@ -47,7 +47,7 @@ trait AttributesTrait
     {
         $model = $builder->getModel();
         $reflectionClass = new \ReflectionClass($model);
-        $shortName = strtolower($reflectionClass->getShortName());
+        $className = $reflectionClass->getName(); // Use full class name instead of short name
 
         foreach ($this->getODataPropertyAttributes($reflectionClass) as $attribute) {
             /** @var ODataProperty $instance */
@@ -63,38 +63,41 @@ trait AttributesTrait
             }
 
             if ($instance->isSelectable()) {
-                $this->selectables[$shortName][$odata_column] = $db_column;
+                $this->selectables[$className][$odata_column] = $db_column;
                 
                 if ($instance->isDefaultSelectable()) {
-                    $this->defaultSelectables[$shortName][$odata_column] = $db_column;
+                    $this->defaultSelectables[$className][$odata_column] = $db_column;
                 }
             }
 
             if ($instance->isFilterable()) {
-                $this->filterables[$shortName][$odata_column] = $db_column;
+                $this->filterables[$className][$odata_column] = $db_column;
             }
 
             if ($instance->isSearchable()) {
-                $this->searchables[$shortName][$odata_column] = $db_column;
+                $this->searchables[$className][$odata_column] = $db_column;
             }
 
             if ($instance->isOrderable()) {
-                $this->orderables[$shortName][$odata_column] = $db_column;
+                $this->orderables[$className][$odata_column] = $db_column;
             }
         }
 
-        foreach ($reflectionClass->getMethods(\ReflectionMethod::IS_PUBLIC) as $reflectionMethod) {
+        foreach ($this->getODataRelationshipMethods($reflectionClass) as $reflectionMethod) {
             $reflectionAttributes = $reflectionMethod->getAttributes(ODataRelationship::class, \ReflectionAttribute::IS_INSTANCEOF);
             $relationshipInstance = $reflectionAttributes ? Arr::first($reflectionAttributes)?->newInstance() : null;
             if ($relationshipInstance) {
                 /** @var ODataRelationship $relationshipInstance */
-                $this->expandables[$shortName][strtolower($relationshipInstance->getName())] = $relationshipInstance->getSource() ?? $reflectionMethod->getName();
+                $this->expandables[$className][strtolower($relationshipInstance->getName())] = $relationshipInstance->getSource() ?? $reflectionMethod->getName();
 
-                $model = $builder->getModel()->{$reflectionMethod->getName()}()->getModel();
-                $reflection = new \ReflectionClass($model);
+                // Use getRelated() instead of getModel() to get the model instance
+                // This works for all relationship types (HasMany, HasOne, BelongsTo, BelongsToMany, etc.)
+                $relatedModel = $builder->getModel()->{$reflectionMethod->getName()}()->getRelated();
+                $relatedReflection = new \ReflectionClass($relatedModel);
+                $relatedClassName = $relatedReflection->getName();
 
-                if (!array_key_exists(strtolower($reflection->getShortName()), $this->expandables)) {
-                    $this->handleModel($model->newQuery());
+                if (!array_key_exists($relatedClassName, $this->expandables)) {
+                    $this->handleModel($relatedModel->newQuery());
                 }
             }
         }
@@ -125,6 +128,52 @@ trait AttributesTrait
         }
 
         return $attributes;
+    }
+
+    /**
+     * Get methods with ODataRelationship attributes for a class, including inherited methods from parent classes.
+     *
+     * Child class methods are returned last so they can override parent mappings.
+     *
+     * @param \ReflectionClass<object> $reflectionClass
+     * @return array<int, \ReflectionMethod>
+     */
+    private function getODataRelationshipMethods(\ReflectionClass $reflectionClass): array
+    {
+        $class_hierarchy = [];
+        $current = $reflectionClass;
+        while ($current !== false) {
+            $class_hierarchy[] = $current;
+            $current = $current->getParentClass();
+        }
+
+        $methods = [];
+        $methodNames = [];
+        foreach (array_reverse($class_hierarchy) as $class_reflection) {
+            foreach ($class_reflection->getMethods(\ReflectionMethod::IS_PUBLIC) as $reflectionMethod) {
+                // Only process methods declared in this specific class (not inherited)
+                if ($reflectionMethod->getDeclaringClass()->getName() !== $class_reflection->getName()) {
+                    continue;
+                }
+
+                $methodName = $reflectionMethod->getName();
+                $reflectionAttributes = $reflectionMethod->getAttributes(ODataRelationship::class, \ReflectionAttribute::IS_INSTANCEOF);
+                
+                if ($reflectionAttributes && !empty($reflectionAttributes)) {
+                    // If method already exists (from parent), replace it with child version
+                    if (isset($methodNames[$methodName])) {
+                        // Remove the old method
+                        $methods = array_filter($methods, function($method) use ($methodName) {
+                            return $method->getName() !== $methodName;
+                        });
+                    }
+                    $methods[] = $reflectionMethod;
+                    $methodNames[$methodName] = true;
+                }
+            }
+        }
+
+        return array_values($methods);
     }
 
     /**
@@ -175,14 +224,36 @@ trait AttributesTrait
      */
     private function isProperty(array $array, string $property, string|null $className = null): string|bool
     {
-        $className ??= $this->subjectModelReflectionClass->getShortName();
         if (empty($array)) {
             return true;
-        } else if (str_contains($property, '.')) {
-            [$className, $property] = array_slice(explode('.', $property), -2, 2);
         }
-        $className = strtolower($className);
-        return $array[$className][$property] ?? false;
+
+        // If className is provided, try to normalize it
+        if ($className !== null) {
+            $normalizedKey = \Aqqo\OData\Utils\ClassUtils::normalizeClassNameForLookup($array, $className, $this->subjectModelReflectionClass);
+            if ($normalizedKey !== null && isset($array[$normalizedKey][$property])) {
+                return $array[$normalizedKey][$property];
+            }
+        }
+
+        // Handle dot notation (nested properties)
+        if (str_contains($property, '.')) {
+            [$className, $property] = array_slice(explode('.', $property), -2, 2);
+            $normalizedKey = \Aqqo\OData\Utils\ClassUtils::normalizeClassNameForLookup($array, $className, $this->subjectModelReflectionClass);
+            if ($normalizedKey !== null && isset($array[$normalizedKey][$property])) {
+                return $array[$normalizedKey][$property];
+            }
+        }
+
+        // Try with subject model's full class name
+        $subjectClassName = $this->subjectModelReflectionClass->getName();
+        if (isset($array[$subjectClassName][$property])) {
+            return $array[$subjectClassName][$property];
+        }
+
+        // Fallback: try with short name for backward compatibility
+        $shortName = strtolower($this->subjectModelReflectionClass->getShortName());
+        return $array[$shortName][$property] ?? false;
     }
 
     /**
@@ -194,20 +265,80 @@ trait AttributesTrait
     {
         // If className is not provided, get it from the subject model
         if (empty($className)) {
-            $className = $this->subjectModelReflectionClass->getShortName();
+            $className = $this->subjectModelReflectionClass->getName(); // Use full class name
+        } else {
+            // className might be a relationship method name (from parentRelation parameter)
+            // Try to resolve it to a class name first
+            $subjectClassName = $this->subjectModelReflectionClass->getName();
+            $normalizedSubject = \Aqqo\OData\Utils\ClassUtils::normalizeClassNameForLookup(
+                $this->expandables,
+                $subjectClassName,
+                $this->subjectModelReflectionClass
+            ) ?? $subjectClassName;
+            
+            // Check if className is actually a relationship name
+            $classNameLower = strtolower($className);
+            if (isset($this->expandables[$normalizedSubject][$classNameLower])) {
+                // It's a relationship name, resolve to the related model class
+                try {
+                    $modelReflection = new \ReflectionClass($normalizedSubject);
+                    $relationshipMethod = $this->expandables[$normalizedSubject][$classNameLower];
+                    if ($modelReflection->hasMethod($relationshipMethod)) {
+                        $tempModel = $modelReflection->newInstanceWithoutConstructor();
+                        $relationship = $tempModel->{$relationshipMethod}();
+                        $relatedModel = $relationship->getRelated();
+                        $className = get_class($relatedModel);
+                    }
+                } catch (\Exception $e) {
+                    // If we can't resolve, treat it as a class name
+                }
+            }
         }
-        $classNameLower = strtolower(Str::singular($className));
 
-        // Handle nested properties
+        // Normalize the class name for lookup
+        $normalizedClassName = \Aqqo\OData\Utils\ClassUtils::normalizeClassNameForLookup(
+            $this->expandables,
+            $className,
+            $this->subjectModelReflectionClass
+        ) ?? $className;
+
+        // Handle nested properties (dot notation)
         if (Str::contains($property, '.')) {
             $segments = explode('.', $property);
-            $currentClass = $classNameLower;
+            $currentClass = $normalizedClassName;
 
             foreach ($segments as $segment) {
                 $segmentLower = strtolower($segment);
 
                 if (isset($this->expandables[$currentClass][$segmentLower])) {
-                    $currentClass = strtolower(Str::singular($this->expandables[$currentClass][$segmentLower]));
+                    $relationshipMethod = $this->expandables[$currentClass][$segmentLower];
+                    
+                    // Resolve the related model class from the relationship
+                    try {
+                        $modelReflection = new \ReflectionClass($currentClass);
+                        if ($modelReflection->hasMethod($relationshipMethod)) {
+                            // Get the related model class from the relationship
+                            // We need to instantiate the model to call the relationship method
+                            $tempModel = $modelReflection->newInstanceWithoutConstructor();
+                            $relationship = $tempModel->{$relationshipMethod}();
+                            $relatedModel = $relationship->getRelated();
+                            $relatedClassName = get_class($relatedModel);
+                            
+                            // Use the related class name for the next iteration
+                            // Check if this related class is in our expandables (it should be, since we process it in handleModel)
+                            if (isset($this->expandables[$relatedClassName])) {
+                                $currentClass = $relatedClassName;
+                            } else {
+                                // If not in expandables yet, we can still use it (it will be processed if needed)
+                                $currentClass = $relatedClassName;
+                            }
+                        } else {
+                            return false;
+                        }
+                    } catch (\Exception $e) {
+                        // If we can't resolve the relationship, return false
+                        return false;
+                    }
                 } else {
                     return false;
                 }
@@ -221,11 +352,11 @@ trait AttributesTrait
             return $property;
         }
 
-        // Singularize and lowercase the class name for lookup
+        // Look up the property
         $propertyLower = strtolower($property);
 
-        if (isset($this->expandables[$classNameLower][$propertyLower])) {
-            return $this->expandables[$classNameLower][$propertyLower];
+        if (isset($this->expandables[$normalizedClassName][$propertyLower])) {
+            return $this->expandables[$normalizedClassName][$propertyLower];
         }
 
         return false;
@@ -237,7 +368,12 @@ trait AttributesTrait
      */
     protected function getSearchables(string|null $className = null): array
     {
-        $className ??= $this->subjectModelReflectionClass->getShortName();
-        return $this->searchables[strtolower($className)] ?? [];
+        $className ??= $this->subjectModelReflectionClass->getName();
+        $normalizedKey = \Aqqo\OData\Utils\ClassUtils::normalizeClassNameForLookup(
+            $this->searchables,
+            $className,
+            $this->subjectModelReflectionClass
+        ) ?? $this->subjectModelReflectionClass->getName();
+        return $this->searchables[$normalizedKey] ?? [];
     }
 }

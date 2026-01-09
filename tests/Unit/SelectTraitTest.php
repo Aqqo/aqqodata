@@ -65,9 +65,9 @@ describe('SelectTrait', function () {
             
             $query->appendSelectQuery('name,id', $builder);
             
-            expect($query->selects)->toHaveKey('testmodel');
-            expect($query->selects['testmodel'])->toHaveKey('name');
-            expect($query->selects['testmodel'])->toHaveKey('id');
+            expect($query->selects)->toHaveKey(\Aqqo\OData\Tests\Testclasses\TestModel::class);
+            expect($query->selects[\Aqqo\OData\Tests\Testclasses\TestModel::class])->toHaveKey('name');
+            expect($query->selects[\Aqqo\OData\Tests\Testclasses\TestModel::class])->toHaveKey('id');
         });
 
         it('ignores non-selectable properties', function () {
@@ -76,9 +76,9 @@ describe('SelectTrait', function () {
             
             $query->appendSelectQuery('name,nonExistentField', $builder);
             
-            expect($query->selects)->toHaveKey('testmodel');
-            expect($query->selects['testmodel'])->toHaveKey('name');
-            expect($query->selects['testmodel'])->not()->toHaveKey('nonExistentField');
+            expect($query->selects)->toHaveKey(\Aqqo\OData\Tests\Testclasses\TestModel::class);
+            expect($query->selects[\Aqqo\OData\Tests\Testclasses\TestModel::class])->toHaveKey('name');
+            expect($query->selects[\Aqqo\OData\Tests\Testclasses\TestModel::class])->not()->toHaveKey('nonExistentField');
         });
 
         it('handles empty select string', function () {
@@ -107,9 +107,9 @@ describe('SelectTrait', function () {
             
             $query->appendSelectQuery(' name , id ', $builder);
             
-            expect($query->selects)->toHaveKey('testmodel');
-            expect($query->selects['testmodel'])->toHaveKey('name');
-            expect($query->selects['testmodel'])->toHaveKey('id');
+            expect($query->selects)->toHaveKey(\Aqqo\OData\Tests\Testclasses\TestModel::class);
+            expect($query->selects[\Aqqo\OData\Tests\Testclasses\TestModel::class])->toHaveKey('name');
+            expect($query->selects[\Aqqo\OData\Tests\Testclasses\TestModel::class])->toHaveKey('id');
         });
 
         it('handles single select item', function () {
@@ -118,8 +118,8 @@ describe('SelectTrait', function () {
             
             $query->appendSelectQuery('name', $builder);
             
-            expect($query->selects)->toHaveKey('testmodel');
-            expect($query->selects['testmodel'])->toHaveKey('name');
+            expect($query->selects)->toHaveKey(\Aqqo\OData\Tests\Testclasses\TestModel::class);
+            expect($query->selects[\Aqqo\OData\Tests\Testclasses\TestModel::class])->toHaveKey('name');
         });
 
         it('handles multiple select items with mixed valid and invalid', function () {
@@ -128,11 +128,11 @@ describe('SelectTrait', function () {
             
             $query->appendSelectQuery('name,invalidField,id,anotherInvalid', $builder);
             
-            expect($query->selects)->toHaveKey('testmodel');
-            expect($query->selects['testmodel'])->toHaveKey('name');
-            expect($query->selects['testmodel'])->toHaveKey('id');
-            expect($query->selects['testmodel'])->not()->toHaveKey('invalidField');
-            expect($query->selects['testmodel'])->not()->toHaveKey('anotherInvalid');
+            expect($query->selects)->toHaveKey(\Aqqo\OData\Tests\Testclasses\TestModel::class);
+            expect($query->selects[\Aqqo\OData\Tests\Testclasses\TestModel::class])->toHaveKey('name');
+            expect($query->selects[\Aqqo\OData\Tests\Testclasses\TestModel::class])->toHaveKey('id');
+            expect($query->selects[\Aqqo\OData\Tests\Testclasses\TestModel::class])->not()->toHaveKey('invalidField');
+            expect($query->selects[\Aqqo\OData\Tests\Testclasses\TestModel::class])->not()->toHaveKey('anotherInvalid');
         });
 
         it('calls resolveToDefaultSelects when no valid selects are found', function () {
@@ -151,9 +151,9 @@ describe('SelectTrait', function () {
             
             $query->appendSelectQuery('odatacol', $builder);
             
-            expect($query->selects)->toHaveKey('testmodel');
-            expect($query->selects['testmodel'])->toHaveKey('odatacol');
-            expect($query->selects['testmodel']['odatacol'])->toBe('dbcol');
+            expect($query->selects)->toHaveKey(\Aqqo\OData\Tests\Testclasses\TestModel::class);
+            expect($query->selects[\Aqqo\OData\Tests\Testclasses\TestModel::class])->toHaveKey('odatacol');
+            expect($query->selects[\Aqqo\OData\Tests\Testclasses\TestModel::class]['odatacol'])->toBe('dbcol');
         });
 
         it('handles non-string items in explode result', function () {
@@ -163,7 +163,7 @@ describe('SelectTrait', function () {
             // This test ensures the is_string check is covered
             $query->appendSelectQuery('name,id', $builder);
             
-            expect($query->selects)->toHaveKey('testmodel');
+            expect($query->selects)->toHaveKey(\Aqqo\OData\Tests\Testclasses\TestModel::class);
         });
     });
 
@@ -257,8 +257,8 @@ describe('SelectTrait', function () {
             
             $query->resolveToDefaultSelects($builder);
             
-            expect($query->selects)->toHaveKey('testmodel');
-            expect($query->selects['testmodel'])->not()->toBeEmpty();
+            expect($query->selects)->toHaveKey(\Aqqo\OData\Tests\Testclasses\TestModel::class);
+            expect($query->selects[\Aqqo\OData\Tests\Testclasses\TestModel::class])->not()->toBeEmpty();
         });
 
         it('resolves default selects for Relation', function () {
@@ -268,8 +268,8 @@ describe('SelectTrait', function () {
             
             $query->resolveToDefaultSelects($relation);
             
-            expect($query->selects)->toHaveKey('relatedmodel');
-            expect($query->selects['relatedmodel'])->not()->toBeEmpty();
+            expect($query->selects)->toHaveKey(\Aqqo\OData\Tests\Testclasses\RelatedModel::class);
+            expect($query->selects[\Aqqo\OData\Tests\Testclasses\RelatedModel::class])->not()->toBeEmpty();
         });
 
         it('handles selectables for different model types', function () {
@@ -281,8 +281,8 @@ describe('SelectTrait', function () {
             $query->resolveToDefaultSelects($builder);
             $query->resolveToDefaultSelects($relation);
             
-            expect($query->selects)->toHaveKey('testmodel');
-            expect($query->selects)->toHaveKey('relatedmodel');
+            expect($query->selects)->toHaveKey(\Aqqo\OData\Tests\Testclasses\TestModel::class);
+            expect($query->selects)->toHaveKey(\Aqqo\OData\Tests\Testclasses\RelatedModel::class);
         });
     });
 
@@ -323,11 +323,11 @@ describe('SelectTrait', function () {
             
             $query->appendSelectQuery('name,id,start_datetime_utc,end_datetime_utc', $builder);
             
-            expect($query->selects)->toHaveKey('testmodel');
-            expect($query->selects['testmodel'])->toHaveKey('name');
-            expect($query->selects['testmodel'])->toHaveKey('id');
-            expect($query->selects['testmodel'])->toHaveKey('start_datetime_utc');
-            expect($query->selects['testmodel'])->toHaveKey('end_datetime_utc');
+            expect($query->selects)->toHaveKey(\Aqqo\OData\Tests\Testclasses\TestModel::class);
+            expect($query->selects[\Aqqo\OData\Tests\Testclasses\TestModel::class])->toHaveKey('name');
+            expect($query->selects[\Aqqo\OData\Tests\Testclasses\TestModel::class])->toHaveKey('id');
+            expect($query->selects[\Aqqo\OData\Tests\Testclasses\TestModel::class])->toHaveKey('start_datetime_utc');
+            expect($query->selects[\Aqqo\OData\Tests\Testclasses\TestModel::class])->toHaveKey('end_datetime_utc');
         });
 
         it('handles select strings with only commas', function () {
@@ -346,12 +346,12 @@ describe('SelectTrait', function () {
             
             $query->appendSelectQuery('name,invalid1,id,invalid2,description', $builder);
             
-            expect($query->selects)->toHaveKey('testmodel');
-            expect($query->selects['testmodel'])->toHaveKey('name');
-            expect($query->selects['testmodel'])->toHaveKey('id');
-            expect($query->selects['testmodel'])->toHaveKey('description');
-            expect($query->selects['testmodel'])->not()->toHaveKey('invalid1');
-            expect($query->selects['testmodel'])->not()->toHaveKey('invalid2');
+            expect($query->selects)->toHaveKey(\Aqqo\OData\Tests\Testclasses\TestModel::class);
+            expect($query->selects[\Aqqo\OData\Tests\Testclasses\TestModel::class])->toHaveKey('name');
+            expect($query->selects[\Aqqo\OData\Tests\Testclasses\TestModel::class])->toHaveKey('id');
+            expect($query->selects[\Aqqo\OData\Tests\Testclasses\TestModel::class])->toHaveKey('description');
+            expect($query->selects[\Aqqo\OData\Tests\Testclasses\TestModel::class])->not()->toHaveKey('invalid1');
+            expect($query->selects[\Aqqo\OData\Tests\Testclasses\TestModel::class])->not()->toHaveKey('invalid2');
         });
     });
 
@@ -362,7 +362,7 @@ describe('SelectTrait', function () {
             $query = Query::for(TestModel::class, $request);
             
             expect($query->selects)->not()->toBeEmpty();
-            expect($query->selects)->toHaveKey('testmodel');
+            expect($query->selects)->toHaveKey(\Aqqo\OData\Tests\Testclasses\TestModel::class);
         });
 
         it('works correctly with Query constructor without select', function () {
@@ -370,7 +370,7 @@ describe('SelectTrait', function () {
             $query = Query::for(TestModel::class, $request);
             
             expect($query->selects)->not()->toBeEmpty();
-            expect($query->selects)->toHaveKey('testmodel');
+            expect($query->selects)->toHaveKey(\Aqqo\OData\Tests\Testclasses\TestModel::class);
         });
 
         it('works correctly with Query constructor with empty select', function () {
@@ -378,7 +378,7 @@ describe('SelectTrait', function () {
             $query = Query::for(TestModel::class, $request);
             
             expect($query->selects)->not()->toBeEmpty();
-            expect($query->selects)->toHaveKey('testmodel');
+            expect($query->selects)->toHaveKey(\Aqqo\OData\Tests\Testclasses\TestModel::class);
         });
 
         it('works correctly with Query constructor with whitespace select', function () {
@@ -386,7 +386,7 @@ describe('SelectTrait', function () {
             $query = Query::for(TestModel::class, $request);
             
             expect($query->selects)->not()->toBeEmpty();
-            expect($query->selects)->toHaveKey('testmodel');
+            expect($query->selects)->toHaveKey(\Aqqo\OData\Tests\Testclasses\TestModel::class);
         });
     });
 });

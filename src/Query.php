@@ -202,7 +202,8 @@ class Query implements \JsonSerializable
         if ($ignore_selects) {
             $attributes = $item->getAttributes();
         } else {
-            foreach ($this->selects[ClassUtils::getShortName($item)] ?? [] as $odata_column => $db_column) {
+            $itemClassName = ClassUtils::getClassName($item);
+            foreach ($this->selects[$itemClassName] ?? [] as $odata_column => $db_column) {
                 $attributes[$odata_column] = $item->getAttribute($db_column);
             }
         }

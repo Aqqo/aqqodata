@@ -48,19 +48,19 @@ trait SelectTrait
      */
     public function appendSelectQuery(string $select, Builder $builder): void
     {
-        $shortName = strtolower((new \ReflectionClass($builder->getModel()))->getShortName());
+        $className = (new \ReflectionClass($builder->getModel()))->getName(); // Use full class name
         if (!empty($select)) {
             foreach (explode(',', $select) as $item) {
                 if (is_string($item)) {
                     $item = trim($item);
-                    if (($selectable = $this->isPropertySelectable($item, $shortName)) && is_string($selectable)) {
-                        $this->selects[$shortName][$item] = trim($selectable);
+                    if (($selectable = $this->isPropertySelectable($item, $className)) && is_string($selectable)) {
+                        $this->selects[$className][$item] = trim($selectable);
                     }
                 }
             }
         }
 
-        if (empty($this->selects[$shortName])) {
+        if (empty($this->selects[$className])) {
             $this->resolveToDefaultSelects($builder);
         }
     }
@@ -100,9 +100,9 @@ trait SelectTrait
      */
     public function resolveToDefaultSelects(Builder|Relation $builder): void
     {
-        $shortName = strtolower((new \ReflectionClass($builder->getModel()))->getShortName());
-        foreach ($this->defaultSelectables[$shortName] ?? [] as $odata_column => $db_column) {
-            $this->selects[$shortName][$odata_column] = $db_column;
+        $className = (new \ReflectionClass($builder->getModel()))->getName(); // Use full class name
+        foreach ($this->defaultSelectables[$className] ?? [] as $odata_column => $db_column) {
+            $this->selects[$className][$odata_column] = $db_column;
         }
     }
 }
