@@ -174,27 +174,39 @@ class Query implements \JsonSerializable
 
     /**
      * @param Collection<int, TModelClass> $collection
+     * @param array<int, true> $visited Object IDs of models currently being resolved (for cycle detection)
      * @return \Illuminate\Support\Collection<int, array<string,mixed>>
      */
-    private function resolveCollection(Collection $collection): \Illuminate\Support\Collection
+    private function resolveCollection(Collection $collection, array &$visited = []): \Illuminate\Support\Collection
     {
-        return $collection->map(function ($item) {
-            return $this->resolveModel($item);
+        return $collection->map(function ($item) use (&$visited) {
+            return $this->resolveModel($item, false, $visited);
         });
     }
 
     /**
+     * Resolve a model to an array, applying selects and recursively resolving relations.
      *
      * Be aware; the issue with not cloning the item might result in infinite loops when
      * a mutated or casted attribute loads in more relations and maybe even a relation to the current item,
      * therefor an infinite loop is introduced.
      *
+     * Cycle detection: when relations form a cycle (e.g. SubbookingSchedule -> ProductOrders -> SubbookingSchedule),
+     * we return a minimal representation (id only) for already-visited models to prevent memory exhaustion.
+     *
      * @param Model $item
      * @param bool $ignore_selects
-     * @return array
+     * @param array<int, true> $visited Object IDs of models currently being resolved (for cycle detection)
+     * @return array<string, mixed>
      */
-    private function resolveModel(Model &$item, bool $ignore_selects = false): array
+    private function resolveModel(Model &$item, bool $ignore_selects = false, array &$visited = []): array
     {
+        $object_id = spl_object_id($item);
+        if (isset($visited[$object_id])) {
+            return ['id' => $item->getKey()];
+        }
+        $visited[$object_id] = true;
+
         // First we clone the item. As the getAttribute might load extra relations we do not want.
         $cloned_item = clone $item;
 
@@ -211,25 +223,27 @@ class Query implements \JsonSerializable
         $cloned_item->setRawAttributes($attributes);
         foreach ($cloned_item->getRelations() as $key => $relation) {
             if ($relation instanceof Collection) {
-                $attributes[$key] = $this->resolveCollection($relation);
-            } else if ($relation instanceof Model)  {
+                $attributes[$key] = $this->resolveCollection($relation, $visited);
+            } elseif ($relation instanceof Model) {
                 $reflectionClass = new \ReflectionClass($item);
 
                 if ($reflectionClass->hasMethod($key)) {
                     $method = $reflectionClass->getMethod($key);
                     $returnType = $method->getReturnType();
 
-                    if ($returnType && $returnType->getName() == MorphTo::class) {
-                        $attributes[$key] = $this->resolveModel($relation, true);
+                    if ($returnType && $returnType->getName() === MorphTo::class) {
+                        $attributes[$key] = $this->resolveModel($relation, true, $visited);
                     } else {
-                        $attributes[$key] = $this->resolveModel($relation);
+                        $attributes[$key] = $this->resolveModel($relation, false, $visited);
                     }
                 } else {
                     // Handle relations like BelongsToMany pivot without defined accessors on the model.
-                    $attributes[$key] = $this->resolveModel($relation, true);
+                    $attributes[$key] = $this->resolveModel($relation, true, $visited);
                 }
             }
         }
+        unset($visited[$object_id]);
+
         return $attributes;
     }
 }

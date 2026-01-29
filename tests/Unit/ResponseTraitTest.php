@@ -177,10 +177,48 @@ describe('ResponseTrait', function () {
     it('handles nextLink generation correctly', function () {
         $query = createQueryFromParams(top: 3);
         $response = $query->getResponse();
-        
+
         if (isset($response['@nextLink'])) {
             expect($response['@nextLink'])->toContain('$skip=');
             expect($response['@nextLink'])->toBeString();
+        }
+    });
+
+    it('handles circular references in expanded relations without memory exhaustion', function () {
+        $this->models->each(function ($model) {
+            $model->relatedModel()->create([
+                'test_model_id' => $model->id,
+                'name' => 'Related ' . $model->name,
+                'cost' => 100,
+            ]);
+        });
+
+        $this->models->each(function ($model) {
+            $model->relatedModel->nestedRelatedModels()->create([
+                'related_model_id' => $model->relatedModel->id,
+                'name' => 'Nested ' . $model->name,
+            ]);
+        });
+
+        $query = createQueryFromParams(
+            expand: 'relatedModel($expand=nestedRelatedModels($expand=relatedModel($expand=nestedRelatedModels)))'
+        );
+        $response = $query->getResponse();
+
+        expect($response)->toHaveKey('value');
+        expect($response['value'])->toBeInstanceOf(\Illuminate\Support\Collection::class);
+        expect($response['value'])->not()->toBeEmpty();
+
+        $first = $response['value']->first();
+        expect($first)->toHaveKey('relatedModel');
+        expect($first['relatedModel'])->toHaveKey('nestedRelatedModels');
+        expect($first['relatedModel']['nestedRelatedModels'])->not()->toBeEmpty();
+
+        $nested = $first['relatedModel']['nestedRelatedModels']->first();
+        expect($nested)->toBeArray();
+        if (isset($nested['relatedModel'])) {
+            expect($nested['relatedModel'])->toHaveKey('id');
+            expect(array_keys($nested['relatedModel']))->toHaveCount(1);
         }
     });
 });
