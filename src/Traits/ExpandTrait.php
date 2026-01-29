@@ -5,6 +5,11 @@ namespace Aqqo\OData\Traits;
 use Aqqo\OData\Utils\StringUtils;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Support\Facades\Config;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -16,6 +21,25 @@ use ReflectionException;
  */
 trait ExpandTrait
 {
+    /**
+     * Apply limit to relation if it is a to-many type (HasMany, BelongsToMany, etc.).
+     * Uses odata.top.default from config to prevent memory exhaustion from large collections.
+     *
+     * @param Builder|Relation $query
+     * @return void
+     */
+    private function applyExpandRelationLimit(Builder|Relation $query): void
+    {
+        if (! $query instanceof Relation) {
+            return;
+        }
+        if ($query instanceof HasMany || $query instanceof BelongsToMany
+            || $query instanceof HasManyThrough || $query instanceof MorphMany) {
+            $limit = Config::integer('odata.top.default', 100);
+            $query->limit($limit);
+        }
+    }
+
     /**
      * Apply $expand parameters from the request to the Eloquent query builder.
      *
@@ -63,6 +87,7 @@ trait ExpandTrait
                     $this->addSelectForExpand($builder, $relation);
 
                     $builder->with([$expandable => function ($query) use ($details, $expandable) {
+                        $this->applyExpandRelationLimit($query);
                         $this->handleExpandDetails($query, $details, $expandable);
                     }]);
                 }
@@ -75,6 +100,7 @@ trait ExpandTrait
                 $this->addSelectForExpand($builder, $expand);
 
                 $builder->with([$expandable => function ($query) {
+                    $this->applyExpandRelationLimit($query);
                     $this->resolveToDefaultSelects($query);
                 }]);
             }
