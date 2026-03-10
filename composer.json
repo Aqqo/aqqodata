@@ -26,9 +26,9 @@
     "require-dev": {
         "ext-json": "*",
         "larastan/larastan": "^2.9",
-        "orchestra/testbench": "v9.12.0",
-        "pestphp/pest": "^2.0",
-        "phpunit/phpunit": "^10.5"
+        "orchestra/testbench": "^9.16",
+        "pestphp/pest": "^3.8",
+        "phpunit/phpunit": "^11.5"
     },
     "autoload": {
         "psr-4": {
