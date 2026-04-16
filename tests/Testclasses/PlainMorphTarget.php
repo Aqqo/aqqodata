@@ -5,7 +5,7 @@ namespace Aqqo\OData\Tests\Testclasses;
 use Illuminate\Database\Eloquent\Model;
 
 /**
- * Morph target with no #[ODataProperty] metadata (tests raw getAttributes fallback).
+ * Morph target with no #[ODataProperty] metadata (tests whitelist-only expand: empty payload).
  */
 class PlainMorphTarget extends Model
 {

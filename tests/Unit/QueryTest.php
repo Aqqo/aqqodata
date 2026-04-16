@@ -197,7 +197,7 @@ describe('Query', function () {
         expect($parentAttributes)->not()->toHaveKey('name');
     });
 
-    it('falls back to raw attributes for morph target without OData metadata', function () {
+    it('serializes morph target without OData metadata as empty whitelist-only payload', function () {
         $testModel = TestModel::factory()->create();
 
         $parent = PlainMorphTarget::create([
@@ -218,10 +218,31 @@ describe('Query', function () {
         $parentAttributes = $results->first()['parent'];
 
         expect($parentAttributes)->toBeArray();
-        expect($parentAttributes)->toHaveKey('name');
-        expect($parentAttributes['name'])->toBe('Plain target');
-        expect($parentAttributes)->toHaveKey('full_name');
-        expect($parentAttributes['full_name'])->toBe('Plain full');
+        expect($parentAttributes)->toBe([]);
+    });
+
+    it('does not expose raw attributes for unannotated morph target even with nested $select', function () {
+        $testModel = TestModel::factory()->create();
+
+        $parent = PlainMorphTarget::create([
+            'name' => 'Plain target',
+            'full_name' => 'Plain full',
+            'cost' => 42,
+            'test_model_id' => $testModel->id,
+        ]);
+
+        MorphModel::create([
+            'name' => 'Morph record',
+            'parent_type' => PlainMorphTarget::class,
+            'parent_id' => $parent->id,
+        ]);
+
+        $request = new Request(['$expand' => 'parent($select=name,full_name)']);
+        $results = Query::for(MorphModel::class, $request)->get();
+        $parentAttributes = $results->first()['parent'];
+
+        expect($parentAttributes)->toBeArray();
+        expect($parentAttributes)->toBe([]);
     });
 
     it('handles queries with ordering', function () {

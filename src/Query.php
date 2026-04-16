@@ -242,8 +242,11 @@ class Query implements \JsonSerializable
     }
 
     /**
-     * For expanded relations (MorphTo, pivot, etc.): honor nested $select when present, otherwise
-     * default-selectable OData fields for the concrete model, else raw attributes.
+     * For expanded relations (MorphTo, pivot, etc.): whitelist-only serialization.
+     *
+     * Uses the nested $select map when non-empty, otherwise default-selectable #[ODataProperty]
+     * fields for the concrete model. If neither yields keys (e.g. unannotated morph target),
+     * returns an empty array — never raw DB attributes.
      *
      * @return array<string, mixed>
      */
@@ -256,6 +259,6 @@ class Query implements \JsonSerializable
 
         $default = $this->getRuntimeDefaultSelectedAttributesForModel($item);
 
-        return $default !== [] ? $default : $item->getAttributes();
+        return $default !== [] ? $default : [];
     }
 }

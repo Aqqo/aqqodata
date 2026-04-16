@@ -131,6 +131,7 @@ trait AttributesTrait
      * Build OData-shaped attributes for a loaded model using default-selectable #[ODataProperty] metadata.
      *
      * Used when serializing expanded relations (e.g. MorphTo) where the concrete type is only known at runtime.
+     * Models without such metadata return an empty array from here; callers must not fall back to raw attributes.
      *
      * @return array<string, mixed>
      */

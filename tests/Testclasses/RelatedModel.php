@@ -5,6 +5,7 @@ namespace Aqqo\OData\Tests\Testclasses;
 use Aqqo\OData\Attributes\ODataProperty;
 use Aqqo\OData\Attributes\ODataRelationship;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -13,6 +14,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[ODataProperty('cost')]
 class RelatedModel extends Model
 {
+    use HasFactory;
+
     protected $guarded = [];
 
     public $timestamps = false;
