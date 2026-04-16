@@ -198,14 +198,9 @@ class Query implements \JsonSerializable
         // First we clone the item. As the getAttribute might load extra relations we do not want.
         $cloned_item = clone $item;
 
-        $attributes = [];
-        if ($ignore_selects) {
-            $attributes = $item->getAttributes();
-        } else {
-            foreach ($this->selects[ClassUtils::getShortName($item)] ?? [] as $odata_column => $db_column) {
-                $attributes[$odata_column] = $item->getAttribute($db_column);
-            }
-        }
+        $attributes = $ignore_selects
+            ? $this->resolveAttributesWithRuntimeODataFallback($item)
+            : $this->resolveAttributesFromSelectMap($item);
 
         // Then set the attribute on the clonedItem
         $cloned_item->setRawAttributes($attributes);
@@ -231,5 +226,36 @@ class Query implements \JsonSerializable
             }
         }
         return $attributes;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function resolveAttributesFromSelectMap(Model $item): array
+    {
+        $attributes = [];
+        foreach ($this->selects[ClassUtils::getShortName($item)] ?? [] as $odata_column => $db_column) {
+            $attributes[$odata_column] = $item->getAttribute($db_column);
+        }
+
+        return $attributes;
+    }
+
+    /**
+     * For expanded relations (MorphTo, pivot, etc.): honor nested $select when present, otherwise
+     * default-selectable OData fields for the concrete model, else raw attributes.
+     *
+     * @return array<string, mixed>
+     */
+    private function resolveAttributesWithRuntimeODataFallback(Model $item): array
+    {
+        $selected = $this->resolveAttributesFromSelectMap($item);
+        if ($selected !== []) {
+            return $selected;
+        }
+
+        $default = $this->getRuntimeDefaultSelectedAttributesForModel($item);
+
+        return $default !== [] ? $default : $item->getAttributes();
     }
 }

@@ -5,6 +5,7 @@ namespace Aqqo\OData\Tests\Unit;
 use Aqqo\OData\Query;
 use Aqqo\OData\Tests\Testclasses\AliasedModel;
 use Aqqo\OData\Tests\Testclasses\MorphModel;
+use Aqqo\OData\Tests\Testclasses\PlainMorphTarget;
 use Aqqo\OData\Tests\Testclasses\TestModel;
 use Illuminate\Http\Request;
 
@@ -151,7 +152,7 @@ describe('Query', function () {
         expect($first)->not()->toHaveKey('full_name');
     });
 
-    it('uses getAttributes when selects are ignored for relations', function () {
+    it('uses default OData projection for morph expanded relations', function () {
         $parent = AliasedModel::create([
             'name' => 'Bob',
             'full_name' => 'Bob Example',
@@ -168,9 +169,59 @@ describe('Query', function () {
         $parentAttributes = $results->first()['parent'];
 
         expect($parentAttributes)->toBeArray();
+        expect($parentAttributes)->toHaveKey('display_name');
+        expect($parentAttributes['display_name'])->toBe('BOB EXAMPLE');
+        expect($parentAttributes)->not()->toHaveKey('full_name');
+    });
+
+    it('applies nested select on morph expanded relation', function () {
+        $parent = AliasedModel::create([
+            'name' => 'Carol',
+            'full_name' => 'Carol Example',
+        ]);
+
+        MorphModel::create([
+            'name' => 'Morph record',
+            'parent_type' => AliasedModel::class,
+            'parent_id' => $parent->id,
+        ]);
+
+        $request = new Request(['$expand' => 'parent($select=display_name)']);
+        $results = Query::for(MorphModel::class, $request)->get();
+        $parentAttributes = $results->first()['parent'];
+
+        expect($parentAttributes)->toBeArray();
+        expect($parentAttributes)->toHaveKeys(['display_name']);
+        expect($parentAttributes['display_name'])->toBe('CAROL EXAMPLE');
+        expect($parentAttributes)->not()->toHaveKey('full_name');
+        expect($parentAttributes)->not()->toHaveKey('name');
+    });
+
+    it('falls back to raw attributes for morph target without OData metadata', function () {
+        $testModel = TestModel::factory()->create();
+
+        $parent = PlainMorphTarget::create([
+            'name' => 'Plain target',
+            'full_name' => 'Plain full',
+            'cost' => 42,
+            'test_model_id' => $testModel->id,
+        ]);
+
+        MorphModel::create([
+            'name' => 'Morph record',
+            'parent_type' => PlainMorphTarget::class,
+            'parent_id' => $parent->id,
+        ]);
+
+        $request = new Request(['$expand' => 'parent']);
+        $results = Query::for(MorphModel::class, $request)->get();
+        $parentAttributes = $results->first()['parent'];
+
+        expect($parentAttributes)->toBeArray();
+        expect($parentAttributes)->toHaveKey('name');
+        expect($parentAttributes['name'])->toBe('Plain target');
         expect($parentAttributes)->toHaveKey('full_name');
-        expect($parentAttributes['full_name'])->toBe('Bob Example');
-        expect($parentAttributes)->not()->toHaveKey('display_name');
+        expect($parentAttributes['full_name'])->toBe('Plain full');
     });
 
     it('handles queries with ordering', function () {
@@ -319,9 +370,9 @@ describe('Query', function () {
 
     it('covers all missing lines from coverage report', function () {
         // This test specifically targets the lines mentioned in the coverage report:
-        // Lines 162-163: Exception handling in get() method
-        // Line 190: resolveModel with ignore_selects=true
-        // Line 205: MorphTo relationship handling
+        // Exception handling in get() method
+        // resolveModel with runtime OData fallback (MorphTo / ignore_selects path)
+        // MorphTo relationship handling
         
         // Test 1: Exception handling (lines 162-163)
         $mockBuilder = \Mockery::mock(\Illuminate\Database\Eloquent\Builder::class);

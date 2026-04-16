@@ -108,7 +108,7 @@ trait AttributesTrait
      * @param \ReflectionClass<object> $reflectionClass
      * @return array<int, \ReflectionAttribute>
      */
-    private function getODataPropertyAttributes(\ReflectionClass $reflectionClass): array
+    protected function getODataPropertyAttributes(\ReflectionClass $reflectionClass): array
     {
         $class_hierarchy = [];
         $current = $reflectionClass;
@@ -122,6 +122,40 @@ trait AttributesTrait
             foreach ($class_reflection->getAttributes(ODataProperty::class, \ReflectionAttribute::IS_INSTANCEOF) as $attribute) {
                 $attributes[] = $attribute;
             }
+        }
+
+        return $attributes;
+    }
+
+    /**
+     * Build OData-shaped attributes for a loaded model using default-selectable #[ODataProperty] metadata.
+     *
+     * Used when serializing expanded relations (e.g. MorphTo) where the concrete type is only known at runtime.
+     *
+     * @return array<string, mixed>
+     */
+    protected function getRuntimeDefaultSelectedAttributesForModel(Model $item): array
+    {
+        $attributes = [];
+        $reflectionClass = new \ReflectionClass($item);
+
+        foreach ($this->getODataPropertyAttributes($reflectionClass) as $attribute) {
+            /** @var ODataProperty $instance */
+            $instance = $attribute->newInstance();
+
+            if (! $instance->isSelectable() || ! $instance->isDefaultSelectable()) {
+                continue;
+            }
+
+            $odata_column = $instance->getName();
+            $db_column = $instance->getSource() ?? $instance->getName();
+
+            $resolver_method = 'oData'.ucfirst($instance->getName()).'Resolver';
+            if (empty($instance->getSource()) && method_exists($item, $resolver_method)) {
+                $db_column = $item->{$resolver_method}();
+            }
+
+            $attributes[$odata_column] = $item->getAttribute($db_column);
         }
 
         return $attributes;
