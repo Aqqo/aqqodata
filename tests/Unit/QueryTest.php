@@ -389,6 +389,13 @@ describe('Query', function () {
         expect($query->toSql())->toBeString();
     });
 
+it('resolves models without an ignore selects parameter', function () {
+    $method = new \ReflectionMethod(Query::class, 'resolveModel');
+
+    expect($method->getNumberOfParameters())->toBe(1);
+    expect($method->getParameters()[0]->getName())->toBe('item');
+});
+
     it('covers all missing lines from coverage report', function () {
         // This test specifically targets the lines mentioned in the coverage report:
         // Exception handling in get() method

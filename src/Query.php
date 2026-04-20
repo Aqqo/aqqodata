@@ -18,7 +18,6 @@ use Aqqo\OData\Traits\OrderByTrait;
 use Aqqo\OData\Traits\SkipTrait;
 use Aqqo\OData\Traits\TopTrait;
 use Aqqo\OData\Traits\ResponseTrait;
-use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 /**
  * @template TModelClass of Model
@@ -190,17 +189,14 @@ class Query implements \JsonSerializable
      * therefor an infinite loop is introduced.
      *
      * @param Model $item
-     * @param bool $ignore_selects
      * @return array
      */
-    private function resolveModel(Model &$item, bool $ignore_selects = false): array
+    private function resolveModel(Model &$item): array
     {
         // First we clone the item. As the getAttribute might load extra relations we do not want.
         $cloned_item = clone $item;
 
-        $attributes = $ignore_selects
-            ? $this->resolveAttributesWithRuntimeODataFallback($item)
-            : $this->resolveAttributesFromSelectMap($item);
+        $attributes = $this->resolveAttributesWithRuntimeODataFallback($item);
 
         // Then set the attribute on the clonedItem
         $cloned_item->setRawAttributes($attributes);
@@ -208,21 +204,7 @@ class Query implements \JsonSerializable
             if ($relation instanceof Collection) {
                 $attributes[$key] = $this->resolveCollection($relation);
             } else if ($relation instanceof Model)  {
-                $reflectionClass = new \ReflectionClass($item);
-
-                if ($reflectionClass->hasMethod($key)) {
-                    $method = $reflectionClass->getMethod($key);
-                    $returnType = $method->getReturnType();
-
-                    if ($returnType && $returnType->getName() == MorphTo::class) {
-                        $attributes[$key] = $this->resolveModel($relation, true);
-                    } else {
-                        $attributes[$key] = $this->resolveModel($relation);
-                    }
-                } else {
-                    // Handle relations like BelongsToMany pivot without defined accessors on the model.
-                    $attributes[$key] = $this->resolveModel($relation, true);
-                }
+                $attributes[$key] = $this->resolveModel($relation);
             }
         }
         return $attributes;
