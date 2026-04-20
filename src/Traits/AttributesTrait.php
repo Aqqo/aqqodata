@@ -111,7 +111,7 @@ trait AttributesTrait
      * Child class attributes are returned last so they can override parent mappings.
      *
      * @param \ReflectionClass<object> $reflectionClass
-     * @return array<int, \ReflectionAttribute>
+     * @return array<int, \ReflectionAttribute<ODataProperty>>
      */
     protected function getODataPropertyAttributes(\ReflectionClass $reflectionClass): array
     {
@@ -308,5 +308,33 @@ trait AttributesTrait
     {
         $className ??= $this->subjectModelReflectionClass->getShortName();
         return $this->searchables[strtolower($className)] ?? [];
+    }
+
+    /**
+     * Resolve the DB attribute / column for a selectable OData property on a concrete model.
+     * Used when mapping nested $expand $select tokens for MorphTo targets, where the subject
+     * query never ran {@see handleModel} for the concrete class so {@see $selectables} may be empty.
+     *
+     * @return string|false
+     */
+    protected function getSelectableDbColumnForConcreteModel(Model $item, string $odataName): string|false
+    {
+        $reflectionClass = new \ReflectionClass($item);
+        foreach ($this->getODataPropertyAttributes($reflectionClass) as $attribute) {
+            /** @var ODataProperty $instance */
+            $instance = $attribute->newInstance();
+            if ($instance->getName() !== $odataName || ! $instance->isSelectable()) {
+                continue;
+            }
+            $db_column = $instance->getSource() ?? $instance->getName();
+            $resolver_method = 'oData'.ucfirst($instance->getName()).'Resolver';
+            if (empty($instance->getSource()) && method_exists($item, $resolver_method)) {
+                $db_column = $item->{$resolver_method}();
+            }
+
+            return is_string($db_column) ? trim($db_column) : $db_column;
+        }
+
+        return false;
     }
 }

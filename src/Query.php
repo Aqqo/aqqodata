@@ -177,8 +177,19 @@ class Query implements \JsonSerializable
      */
     private function resolveCollection(Collection $collection): \Illuminate\Support\Collection
     {
-        return $collection->map(function ($item) {
+        return $collection->map(function (Model $item): array {
             return $this->resolveModel($item);
+        });
+    }
+
+    /**
+     * @param Collection<int, TModelClass> $collection
+     * @return \Illuminate\Support\Collection<int, array<string,mixed>>
+     */
+    private function resolveCollectionForRelation(Collection $collection, string $relationName): \Illuminate\Support\Collection
+    {
+        return $collection->map(function (Model $item) use ($relationName): array {
+            return $this->resolveModel($item, $relationName);
         });
     }
 
@@ -189,34 +200,71 @@ class Query implements \JsonSerializable
      * therefor an infinite loop is introduced.
      *
      * @param Model $item
-     * @return array
+     * @return array<string, mixed>
      */
-    private function resolveModel(Model &$item): array
+    private function resolveModel(Model &$item, ?string $expandedAsRelation = null): array
     {
         // First we clone the item. As the getAttribute might load extra relations we do not want.
         $cloned_item = clone $item;
 
-        $attributes = $this->resolveAttributesWithRuntimeODataFallback($item);
+        $attributes = $this->resolveAttributesWithRuntimeODataFallback($item, $expandedAsRelation);
 
         // Then set the attribute on the clonedItem
         $cloned_item->setRawAttributes($attributes);
         foreach ($cloned_item->getRelations() as $key => $relation) {
             if ($relation instanceof Collection) {
-                $attributes[$key] = $this->resolveCollection($relation);
+                $attributes[$key] = $this->resolveCollectionForRelation($relation, $key);
             } else if ($relation instanceof Model)  {
-                $attributes[$key] = $this->resolveModel($relation);
+                $attributes[$key] = $this->resolveModel($relation, $key);
             }
         }
         return $attributes;
     }
 
     /**
-     * @return array<string, mixed>
+     * Resolves attributes from nested $expand $select tokens (see {@see SelectTrait::$nestedExpandExplicitSelectTokens})
+     * when serializing that relation, otherwise from {@see SelectTrait::$selects} for this model's short name.
+     *
+     * - `null` — no applicable select map for this serialization context; caller may use runtime default OData properties.
+     * - `[]` — nested $select was applied but mapped to no fields (explicit empty whitelist).
+     * - non-empty — mapped projection.
+     *
+     * @return array<string, mixed>|null
      */
-    private function resolveAttributesFromSelectMap(Model $item): array
+    private function resolveAttributesFromSelectMap(Model $item, ?string $expandedAsRelation = null): ?array
     {
+        if ($expandedAsRelation !== null && array_key_exists($expandedAsRelation, $this->nestedExpandExplicitSelectTokens)) {
+            $tokens = $this->nestedExpandExplicitSelectTokens[$expandedAsRelation];
+            $mapped = [];
+            foreach ($tokens as $token) {
+                $dbColumn = $this->getSelectableDbColumnForConcreteModel($item, $token);
+                if ($dbColumn !== false) {
+                    $mapped[$token] = $dbColumn;
+                }
+            }
+            if ($mapped === []) {
+                return [];
+            }
+            $attributes = [];
+            foreach ($mapped as $odata_column => $db_column) {
+                $attributes[$odata_column] = $item->getAttribute($db_column);
+            }
+
+            return $attributes;
+        }
+
+        $shortName = ClassUtils::getShortName($item);
+        if (! array_key_exists($shortName, $this->selects)) {
+            return null;
+        }
+
+        $map = $this->selects[$shortName];
+        if ($map === []) {
+            return [];
+        }
+
         $attributes = [];
-        foreach ($this->selects[ClassUtils::getShortName($item)] ?? [] as $odata_column => $db_column) {
+        foreach ($map as $odata_column => $db_column) {
             $attributes[$odata_column] = $item->getAttribute($db_column);
         }
 
@@ -232,15 +280,15 @@ class Query implements \JsonSerializable
      *
      * @return array<string, mixed>
      */
-    private function resolveAttributesWithRuntimeODataFallback(Model $item): array
+    private function resolveAttributesWithRuntimeODataFallback(Model $item, ?string $expandedAsRelation = null): array
     {
-        $selected = $this->resolveAttributesFromSelectMap($item);
-        if ($selected !== []) {
-            return $selected;
+        $selected = $this->resolveAttributesFromSelectMap($item, $expandedAsRelation);
+        if ($selected === null) {
+            $default = $this->getRuntimeDefaultSelectedAttributesForModel($item);
+
+            return $default !== [] ? $default : [];
         }
 
-        $default = $this->getRuntimeDefaultSelectedAttributesForModel($item);
-
-        return $default !== [] ? $default : [];
+        return $selected;
     }
 }

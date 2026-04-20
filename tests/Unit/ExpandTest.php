@@ -54,6 +54,13 @@ it('can handle expand with $select option', function () {
     expect($first['relatedModel'])->toHaveKey('name');
 });
 
+it('serializes expanded relation as empty when nested $select maps to no valid fields', function () {
+    $models = createQueryFromParams(expand: 'relatedModel($select=nonExistentField)')->get();
+    $first = $models->first();
+    expect(array_key_exists('relatedModel', $first))->toEqual(true);
+    expect($first['relatedModel'])->toBe([]);
+});
+
 it('can handle expand with $filter option', function () {
     $name = $this->models->first()->name;
     $models = createQueryFromParams(expand: "relatedModel(\$filter=name eq '{$name}')")->get();

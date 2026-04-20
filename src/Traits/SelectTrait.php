@@ -2,7 +2,6 @@
 
 namespace Aqqo\OData\Traits;
 
-use Aqqo\OData\Query;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -24,6 +23,15 @@ trait SelectTrait
      * @var array<string, array<string,string>>
      */
     public array $selects = [];
+
+    /**
+     * OData property names requested per expanded relation key (e.g. relatedModel, parent)
+     * when $expand includes a nested $select=. Used at serialization with the concrete
+     * loaded model (required for MorphTo). Empty list means an explicit empty $select.
+     *
+     * @var array<string, list<string>>
+     */
+    public array $nestedExpandExplicitSelectTokens = [];
 
     /**
      * @return void

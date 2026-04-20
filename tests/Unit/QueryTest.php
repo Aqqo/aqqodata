@@ -198,6 +198,26 @@ describe('Query', function () {
         expect($parentAttributes)->not()->toHaveKey('name');
     });
 
+    it('does not fall back to default OData projection when morph nested $select maps to no fields', function () {
+        $parent = AliasedModel::create([
+            'name' => 'Frank',
+            'full_name' => 'Frank Example',
+        ]);
+
+        MorphModel::create([
+            'name' => 'Morph record',
+            'parent_type' => AliasedModel::class,
+            'parent_id' => $parent->id,
+        ]);
+
+        $request = new Request(['$expand' => 'parent($select=name)']);
+        $results = Query::for(MorphModel::class, $request)->get();
+        $parentAttributes = $results->first()['parent'];
+
+        expect($parentAttributes)->toBeArray();
+        expect($parentAttributes)->toBe([]);
+    });
+
     it('serializes morph target without OData metadata as empty whitelist-only payload', function () {
         $testModel = TestModel::factory()->create();
 
@@ -439,8 +459,9 @@ describe('Query', function () {
 it('resolves models without an ignore selects parameter', function () {
     $method = new \ReflectionMethod(Query::class, 'resolveModel');
 
-    expect($method->getNumberOfParameters())->toBe(1);
+    expect($method->getNumberOfParameters())->toBe(2);
     expect($method->getParameters()[0]->getName())->toBe('item');
+    expect($method->getParameters()[1]->getName())->toBe('expandedAsRelation');
 });
 
     it('covers all missing lines from coverage report', function () {

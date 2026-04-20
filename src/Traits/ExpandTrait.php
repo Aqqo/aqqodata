@@ -25,7 +25,7 @@ trait ExpandTrait
      * Apply limit to relation if it is a to-many type (HasMany, BelongsToMany, etc.).
      * Uses odata.top.default from config to prevent memory exhaustion from large collections.
      *
-     * @param Builder|Relation $query
+     * @param Builder<TModelClass>|Relation<TModelClass, TRelatedModel, Collection<int, TRelatedModel>> $query
      * @return void
      */
     private function applyExpandRelationLimit(Builder|Relation $query): void
@@ -119,37 +119,33 @@ trait ExpandTrait
      */
     private function handleExpandDetails(Builder|Relation $builder, string $details, string $relation): void
     {
-        // If $builder is a Relation, get the underlying Builder
-        if ($builder instanceof Relation) {
-            $builder = $builder->getQuery();
-        }
-
+        $relationQuery = $builder instanceof Relation ? $builder->getQuery() : $builder;
 
         // First, split the details by semicolons to separate different options
         $parsedOptions = StringUtils::getSortedDetails($details, ';');
 
         foreach ($parsedOptions as $option) {
-            $this->handleOption($builder, $option, $relation);
+            $this->handleOption($relationQuery, $option, $relation);
         }
 
         // If no $select is specified, apply default selects
         if (!collect($parsedOptions)->contains(function($option) {
             return Str::startsWith(strtolower($option), '$select=');
         })) {
-            $this->resolveToDefaultSelects($builder);
+            $this->resolveToDefaultSelects($relationQuery);
         }
     }
 
     /**
      * Handle an individual option within an expand.
      *
-     * @param Builder<TModelClass>|Relation<TModelClass, TRelatedModel, Collection<int, TRelatedModel>> $builder
+     * @param Builder<TModelClass> $builder
      * @param string  $option
      * @param string  $relation
      *
      * @return void
      */
-    private function handleOption(Builder|Relation $builder, string $option, string $relation): void
+    private function handleOption(Builder $builder, string $option, string $relation): void
     {
         // Check if the option starts with a known key
         if (Str::startsWith(strtolower($option), '$select=')) {
@@ -222,7 +218,19 @@ trait ExpandTrait
     {
         if ($this->select) {
             $this->addSelectForExpand($builder, $expandable);
-            $this->appendSelectQuery($value, $builder);
+            $tokens = [];
+            if ($value !== '') {
+                foreach (explode(',', $value) as $item) {
+                    if (! is_string($item)) {
+                        continue;
+                    }
+                    $trimmed = trim($item);
+                    if ($trimmed !== '') {
+                        $tokens[] = $trimmed;
+                    }
+                }
+            }
+            $this->nestedExpandExplicitSelectTokens[$expandable] = $tokens;
         }
     }
 
