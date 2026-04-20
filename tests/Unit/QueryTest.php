@@ -7,6 +7,7 @@ use Aqqo\OData\Tests\Testclasses\AliasedModel;
 use Aqqo\OData\Tests\Testclasses\MorphModel;
 use Aqqo\OData\Tests\Testclasses\PlainMorphTarget;
 use Aqqo\OData\Tests\Testclasses\TestModel;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 
 describe('Query', function () {
@@ -243,6 +244,52 @@ describe('Query', function () {
 
         expect($parentAttributes)->toBeArray();
         expect($parentAttributes)->toBe([]);
+    });
+
+    it('caches runtime OData metadata per expanded morph target class', function () {
+        $firstParent = AliasedModel::create([
+            'name' => 'Dave',
+            'full_name' => 'Dave Example',
+        ]);
+
+        $secondParent = AliasedModel::create([
+            'name' => 'Eve',
+            'full_name' => 'Eve Example',
+        ]);
+
+        MorphModel::create([
+            'name' => 'Morph record 1',
+            'parent_type' => AliasedModel::class,
+            'parent_id' => $firstParent->id,
+        ]);
+
+        MorphModel::create([
+            'name' => 'Morph record 2',
+            'parent_type' => AliasedModel::class,
+            'parent_id' => $secondParent->id,
+        ]);
+
+        $request = new Request(['$expand' => 'parent']);
+        $query = new class(MorphModel::query(), request: $request) extends Query {
+            /** @var array<class-string<Model>, int> */
+            public array $runtimeDefinitionBuilds = [];
+
+            protected function buildRuntimeDefaultSelectedAttributeDefinitions(Model $item): array
+            {
+                $modelClass = $item::class;
+                $this->runtimeDefinitionBuilds[$modelClass] = ($this->runtimeDefinitionBuilds[$modelClass] ?? 0) + 1;
+
+                return parent::buildRuntimeDefaultSelectedAttributeDefinitions($item);
+            }
+        };
+
+        $results = $query->get();
+
+        expect($results)->toHaveCount(2);
+        expect($query->runtimeDefinitionBuilds)->toBe([
+            MorphModel::class => 1,
+            AliasedModel::class => 1,
+        ]);
     });
 
     it('handles queries with ordering', function () {

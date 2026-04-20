@@ -30,6 +30,11 @@ trait AttributesTrait
     private $expandables = [];
 
     /**
+     * @var array<class-string<Model>, array<int, array{odata_column: string, source: string|null, resolver_method: string|null}>>
+     */
+    private array $runtimeDefaultSelectedAttributeDefinitions = [];
+
+    /**
      * @return void
      * @throws \ReflectionException
      */
@@ -138,6 +143,31 @@ trait AttributesTrait
     protected function getRuntimeDefaultSelectedAttributesForModel(Model $item): array
     {
         $attributes = [];
+        $modelClass = $item::class;
+
+        if (! array_key_exists($modelClass, $this->runtimeDefaultSelectedAttributeDefinitions)) {
+            $this->runtimeDefaultSelectedAttributeDefinitions[$modelClass] = $this->buildRuntimeDefaultSelectedAttributeDefinitions($item);
+        }
+
+        foreach ($this->runtimeDefaultSelectedAttributeDefinitions[$modelClass] as $definition) {
+            $db_column = $definition['source'] ?? $definition['odata_column'];
+            if ($definition['resolver_method'] !== null) {
+                $db_column = $item->{$definition['resolver_method']}();
+            }
+
+            $odata_column = $definition['odata_column'];
+            $attributes[$odata_column] = $item->getAttribute($db_column);
+        }
+
+        return $attributes;
+    }
+
+    /**
+     * @return array<int, array{odata_column: string, source: string|null, resolver_method: string|null}>
+     */
+    protected function buildRuntimeDefaultSelectedAttributeDefinitions(Model $item): array
+    {
+        $definitions = [];
         $reflectionClass = new \ReflectionClass($item);
 
         foreach ($this->getODataPropertyAttributes($reflectionClass) as $attribute) {
@@ -148,18 +178,22 @@ trait AttributesTrait
                 continue;
             }
 
-            $odata_column = $instance->getName();
-            $db_column = $instance->getSource() ?? $instance->getName();
-
-            $resolver_method = 'oData'.ucfirst($instance->getName()).'Resolver';
-            if (empty($instance->getSource()) && method_exists($item, $resolver_method)) {
-                $db_column = $item->{$resolver_method}();
+            $resolver_method = null;
+            if (empty($instance->getSource())) {
+                $candidateResolver = 'oData'.ucfirst($instance->getName()).'Resolver';
+                if (method_exists($item, $candidateResolver)) {
+                    $resolver_method = $candidateResolver;
+                }
             }
 
-            $attributes[$odata_column] = $item->getAttribute($db_column);
+            $definitions[] = [
+                'odata_column' => $instance->getName(),
+                'source' => $instance->getSource(),
+                'resolver_method' => $resolver_method,
+            ];
         }
 
-        return $attributes;
+        return $definitions;
     }
 
     /**
