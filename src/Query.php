@@ -235,7 +235,7 @@ class Query implements \JsonSerializable
                 $reflectionClass = new \ReflectionClass($item);
 
                 if ($reflectionClass->hasMethod($key)) {
-                    $this->resolveModel($relation);
+                    $attributes[$key] = $this->resolveModel($relation);
                 } else {
                     // Handle relations like BelongsToMany pivot without defined accessors on the model.
                     $attributes[$key] = $this->resolveModel($relation, true);
