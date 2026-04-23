@@ -18,7 +18,6 @@ use Aqqo\OData\Traits\OrderByTrait;
 use Aqqo\OData\Traits\SkipTrait;
 use Aqqo\OData\Traits\TopTrait;
 use Aqqo\OData\Traits\ResponseTrait;
-use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 /**
  * @template TModelClass of Model
@@ -198,11 +197,31 @@ class Query implements \JsonSerializable
         // First we clone the item. As the getAttribute might load extra relations we do not want.
         $cloned_item = clone $item;
 
+        // Get the selected attributes from the item.
+        $shortName = ClassUtils::getShortName($item);
         $attributes = [];
+        // If the ignore_selects is true, we just get the attributes from the item.
         if ($ignore_selects) {
             $attributes = $item->getAttributes();
-        } else {
-            foreach ($this->selects[ClassUtils::getShortName($item)] ?? [] as $odata_column => $db_column) {
+        } 
+        // If we processed selects from the request, we use those.
+        else if (array_key_exists($shortName, $this->selects)) {
+            foreach ($this->selects[$shortName] ?? [] as $odata_column => $db_column) {
+                $attributes[$odata_column] = $item->getAttribute($db_column);
+            }
+        } 
+        // If we did not process selects from the request, but we have processed the model before, we use the default selects.
+        // This is a fallback to handle relations like morphTo where its not predefined which model will be loaded.
+        else if (array_key_exists($shortName, $this->defaultSelectables)) {
+            foreach ($this->defaultSelectables[$shortName] ?? [] as $odata_column => $db_column) {
+                $attributes[$odata_column] = $item->getAttribute($db_column);
+            }
+        } 
+        // If we did not process selects from the request and we did not have default selects, we process the model now to find the default selects.
+        // This is a fallback to handle relations like morphTo where its not predefined which model will be loaded.
+        else {
+            $this->handleModel($item->newQuery());
+            foreach ($this->defaultSelectables[$shortName] ?? [] as $odata_column => $db_column) {
                 $attributes[$odata_column] = $item->getAttribute($db_column);
             }
         }
@@ -216,14 +235,7 @@ class Query implements \JsonSerializable
                 $reflectionClass = new \ReflectionClass($item);
 
                 if ($reflectionClass->hasMethod($key)) {
-                    $method = $reflectionClass->getMethod($key);
-                    $returnType = $method->getReturnType();
-
-                    if ($returnType && $returnType->getName() == MorphTo::class) {
-                        $attributes[$key] = $this->resolveModel($relation, true);
-                    } else {
-                        $attributes[$key] = $this->resolveModel($relation);
-                    }
+                    $this->resolveModel($relation);
                 } else {
                     // Handle relations like BelongsToMany pivot without defined accessors on the model.
                     $attributes[$key] = $this->resolveModel($relation, true);
