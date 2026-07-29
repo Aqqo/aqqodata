@@ -19,6 +19,8 @@ use Illuminate\Support\Carbon;
 #[ODataProperty('description', searchable: true)]
 #[ODataProperty('cost', filterable: true)]
 #[ODataProperty('test')]
+#[ODataProperty('is_visible', filterable: true)]
+#[ODataProperty('true_flag', filterable: true)]
 #[ODataProperty('odatacol', source: 'dbcol')]
 #[ODataProperty('start_datetime_utc')]
 #[ODataProperty('end_datetime_utc')]

@@ -537,3 +537,64 @@ it('can handle edge cases with mixed case aggregate functions for all', function
     
     expect($models)->toBeInstanceOf(\Illuminate\Support\Collection::class);
 });
+// CRS-17263: the boolean literals `true`/`false` reached the query builder as the plain
+// strings 'true'/'false', which the database coerced to 0 - so both returned the false set.
+
+it('returns only the true rows when filtering on the true literal', function () {
+    \Aqqo\OData\Tests\Testclasses\TestModel::query()->update(['is_visible' => false]);
+    $visible = \Aqqo\OData\Tests\Testclasses\TestModel::factory()->count(2)->create(['is_visible' => true]);
+
+    $models = createQueryFromParams(filter: 'is_visible eq true')->get();
+
+    expect($models)->toHaveCount(2);
+    expect($models->pluck('id')->sort()->values()->all())
+        ->toEqual($visible->pluck('id')->sort()->values()->all());
+});
+
+it('returns only the false rows when filtering on the false literal', function () {
+    \Aqqo\OData\Tests\Testclasses\TestModel::query()->update(['is_visible' => false]);
+    \Aqqo\OData\Tests\Testclasses\TestModel::factory()->count(2)->create(['is_visible' => true]);
+
+    $models = createQueryFromParams(filter: 'is_visible eq false')->get();
+
+    expect($models)->toHaveCount(5);
+    expect($models->pluck('is_visible')->unique()->all())->toEqual([0]);
+});
+
+it('returns the same rows for the boolean literals as for 1 and 0', function () {
+    \Aqqo\OData\Tests\Testclasses\TestModel::query()->update(['is_visible' => false]);
+    \Aqqo\OData\Tests\Testclasses\TestModel::factory()->count(2)->create(['is_visible' => true]);
+
+    expect(createQueryFromParams(filter: 'is_visible eq true')->get()->pluck('id')->all())
+        ->toEqual(createQueryFromParams(filter: 'is_visible eq 1')->get()->pluck('id')->all());
+    expect(createQueryFromParams(filter: 'is_visible eq false')->get()->pluck('id')->all())
+        ->toEqual(createQueryFromParams(filter: 'is_visible eq 0')->get()->pluck('id')->all());
+});
+
+it('negates boolean literals through ne and not', function () {
+    \Aqqo\OData\Tests\Testclasses\TestModel::query()->update(['is_visible' => false]);
+    \Aqqo\OData\Tests\Testclasses\TestModel::factory()->count(2)->create(['is_visible' => true]);
+
+    expect(createQueryFromParams(filter: 'is_visible ne true')->get())->toHaveCount(5);
+    expect(createQueryFromParams(filter: 'is_visible ne false')->get())->toHaveCount(2);
+    expect(createQueryFromParams(filter: 'not is_visible eq true')->get())->toHaveCount(5);
+    expect(createQueryFromParams(filter: 'not is_visible eq false')->get())->toHaveCount(2);
+});
+
+it('keeps treating a quoted true as a string value', function () {
+    \Aqqo\OData\Tests\Testclasses\TestModel::factory()->create(['name' => 'true']);
+
+    $models = createQueryFromParams(filter: "name eq 'true'")->get();
+
+    expect($models)->toHaveCount(1);
+    expect($models->first()['name'])->toEqual('true');
+});
+
+it('keeps treating an identifier that starts with true as an identifier', function () {
+    \Aqqo\OData\Tests\Testclasses\TestModel::query()->update(['true_flag' => 'no']);
+    \Aqqo\OData\Tests\Testclasses\TestModel::factory()->create(['true_flag' => 'yes']);
+
+    $models = createQueryFromParams(filter: "true_flag eq 'yes'")->get();
+
+    expect($models)->toHaveCount(1);
+});

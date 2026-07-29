@@ -335,6 +335,12 @@ trait FilterTrait
      */
     private function splitInput(string $input, bool $inverseOperator = false): array
     {
+        // A leading `not` negates the expression that follows it, so drop it and invert the operator.
+        if (preg_match('/^\s*not\s+(?=[A-Za-z_])(.+)$/i', $input, $notMatches)) {
+            $input = $notMatches[1];
+            $inverseOperator = !$inverseOperator;
+        }
+
         // Define the regex pattern to match tokens:
         // 1. Functions and operators
         // 2. Parentheses and commas
@@ -342,7 +348,9 @@ trait FilterTrait
         $pattern = '/\b(contains|startswith|endswith|and|or|not|eq|ne|gt|ge|lt|le|in)\b|([(),])|\'([^\']*)\''
             // 4. Numeric or date/time (anything starting with a digit).
             . '|(\d+[-+.:TZ0-9]*)'
-            // 5. Field names or identifiers
+            // 5. Boolean literals. Must precede the identifier alternative, which would otherwise swallow them.
+            . '|\b(true|false)\b'
+            // 6. Field names or identifiers
             . '|([A-Za-z_][A-Za-z0-9_]*)'
             . '/i';
         $lambda = '';
@@ -372,9 +380,13 @@ trait FilterTrait
                     return $token;
                 }
 
-            } elseif (!empty($match[5])) {
+            } elseif (($match[5] ?? '') !== '') {
+                // Boolean literal. Normalise to the numeric form the query builder already handles,
+                // so that `eq true` behaves exactly like `eq 1` on the underlying boolean column.
+                return strtolower($match[5]) === 'true' ? '1' : '0';
+            } elseif (!empty($match[6])) {
                 // Field names or identifiers
-                return $match[5];
+                return $match[6];
             }
             return null;
         }, $matches);
