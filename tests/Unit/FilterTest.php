@@ -581,6 +581,15 @@ it('negates boolean literals through ne and not', function () {
     expect(createQueryFromParams(filter: 'not is_visible eq false')->get())->toHaveCount(2);
 });
 
+it('negates an IN filter with boolean literals', function () {
+    \Aqqo\OData\Tests\Testclasses\TestModel::query()->update(['is_visible' => false]);
+    \Aqqo\OData\Tests\Testclasses\TestModel::factory()->count(2)->create(['is_visible' => true]);
+
+    $models = createQueryFromParams(filter: 'not is_visible in (true, false)')->get();
+
+    expect($models)->toHaveCount(0);
+});
+
 it('keeps treating a quoted true as a string value', function () {
     \Aqqo\OData\Tests\Testclasses\TestModel::factory()->create(['name' => 'true']);
 
@@ -627,4 +636,30 @@ it('negates an all lambda through not', function () {
     $models = createQueryFromParams(filter: "not relatedModels/all(s:s/name eq 'AllMatch')")->get();
 
     expect($models->pluck('id')->all())->toEqual([$this->models[1]->id]);
+});
+
+it('handles IN and NOT IN inside all lambdas', function () {
+    $matching = new \Aqqo\OData\Tests\Testclasses\RelatedModel([
+        'name' => 'MatchingIn',
+        'is_active' => true,
+    ]);
+    $matching->testModel()->associate($this->models[0]);
+    $matching->save();
+
+    $violating = new \Aqqo\OData\Tests\Testclasses\RelatedModel([
+        'name' => 'ViolatingIn',
+        'is_active' => false,
+    ]);
+    $violating->testModel()->associate($this->models[1]);
+    $violating->save();
+
+    $all = createQueryFromParams(filter: 'relatedModels/all(s:s/is_active in (true))')->get();
+    $notAll = createQueryFromParams(filter: 'not relatedModels/all(s:s/is_active in (true))')->get();
+
+    expect($all->pluck('id')->all())
+        ->toEqual($this->models->pluck('id')->reject(
+            fn (int $id) => $id === $this->models[1]->id
+        )->values()->all());
+    expect($notAll->pluck('id')->all())
+        ->toEqual([$this->models[1]->id]);
 });

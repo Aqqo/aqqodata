@@ -147,22 +147,7 @@ trait FilterTrait
 
                     $builder->{$function}($expandable, function ($query) use ($column, $operator, $value) {
                         if ($column = $this->isValidFilter($column, $operator, $value, $query)) {
-                            if (strtolower($operator) === 'in') {
-                                if (is_array($value)) {
-                                    $query->whereIn($column, $value);
-                                } else {
-                                    // Extract values from the string format ('value1', 'value2')
-                                    preg_match("/\((.*?)\)/", (string)$value, $matches);
-                                    if (isset($matches[1])) {
-                                        $values = array_map(function($val) {
-                                            return trim($val, "'");
-                                        }, explode(',', $matches[1]));
-                                        $query->whereIn($column, $values);
-                                    }
-                                }
-                            } else {
-                                $query->where($column, $operator, $value);
-                            }
+                            $this->applyFilterCondition($query, 'where', $column, $operator, $value);
                         }
                     });
                 }
@@ -185,23 +170,38 @@ trait FilterTrait
                 }
             }
 
-            if (strtolower($operator) === 'in') {
-                if (is_array($value)) {
-                    $builder->{$currentStatement . 'In'}($column, $value);
-                } else {
-                    // Extract values from the string format ('value1', 'value2')
-                    preg_match("/\((.*?)\)/", (string)$value, $matches);
-                    if (isset($matches[1])) {
-                        $values = array_map(function($val) {
-                            return trim($val, "'");
-                        }, explode(',', $matches[1]));
-                        $builder->{$currentStatement . 'In'}($column, $values);
-                    }
-                }
-            } else {
-                $builder->{$currentStatement}($column, $operator, $value);
-            }
+            $this->applyFilterCondition($builder, $currentStatement, $column, $operator, $value);
         }
+    }
+
+    /**
+     * Apply a validated filter condition to the query builder.
+     *
+     * @param Builder<TModelClass> $builder
+     * @param 'where'|'orWhere' $statement
+     * @param string|true $column
+     * @param string|array<int, string>|null $value
+     */
+    private function applyFilterCondition(
+        Builder $builder,
+        string $statement,
+        string|true $column,
+        string $operator,
+        string|array|null $value
+    ): void {
+        $normalisedOperator = strtoupper($operator);
+
+        if (in_array($normalisedOperator, ['IN', 'NOT IN'], true)) {
+            if (!is_array($value)) {
+                return;
+            }
+
+            $method = $statement . ($normalisedOperator === 'NOT IN' ? 'NotIn' : 'In');
+            $builder->{$method}($column, $value);
+            return;
+        }
+
+        $builder->{$statement}($column, $operator, $value);
     }
 
     /**
@@ -264,7 +264,7 @@ trait FilterTrait
         }
 
         // Special handling for in operator
-        if (strtolower($operator) === 'in') {
+        if (in_array(strtoupper($operator), ['IN', 'NOT IN'], true)) {
             if (!is_array($value) || empty($value)) {
                 return false;
             }
