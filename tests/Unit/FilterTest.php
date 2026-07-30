@@ -537,3 +537,129 @@ it('can handle edge cases with mixed case aggregate functions for all', function
     
     expect($models)->toBeInstanceOf(\Illuminate\Support\Collection::class);
 });
+// CRS-17263: the boolean literals `true`/`false` reached the query builder as the plain
+// strings 'true'/'false', which the database coerced to 0 - so both returned the false set.
+
+it('returns only the true rows when filtering on the true literal', function () {
+    \Aqqo\OData\Tests\Testclasses\TestModel::query()->update(['is_visible' => false]);
+    $visible = \Aqqo\OData\Tests\Testclasses\TestModel::factory()->count(2)->create(['is_visible' => true]);
+
+    $models = createQueryFromParams(filter: 'is_visible eq true')->get();
+
+    expect($models)->toHaveCount(2);
+    expect($models->pluck('id')->sort()->values()->all())
+        ->toEqual($visible->pluck('id')->sort()->values()->all());
+});
+
+it('returns only the false rows when filtering on the false literal', function () {
+    \Aqqo\OData\Tests\Testclasses\TestModel::query()->update(['is_visible' => false]);
+    \Aqqo\OData\Tests\Testclasses\TestModel::factory()->count(2)->create(['is_visible' => true]);
+
+    $models = createQueryFromParams(filter: 'is_visible eq false')->get();
+
+    expect($models)->toHaveCount(5);
+    expect($models->pluck('is_visible')->unique()->all())->toEqual([0]);
+});
+
+it('returns the same rows for the boolean literals as for 1 and 0', function () {
+    \Aqqo\OData\Tests\Testclasses\TestModel::query()->update(['is_visible' => false]);
+    \Aqqo\OData\Tests\Testclasses\TestModel::factory()->count(2)->create(['is_visible' => true]);
+
+    expect(createQueryFromParams(filter: 'is_visible eq true')->get()->pluck('id')->all())
+        ->toEqual(createQueryFromParams(filter: 'is_visible eq 1')->get()->pluck('id')->all());
+    expect(createQueryFromParams(filter: 'is_visible eq false')->get()->pluck('id')->all())
+        ->toEqual(createQueryFromParams(filter: 'is_visible eq 0')->get()->pluck('id')->all());
+});
+
+it('negates boolean literals through ne and not', function () {
+    \Aqqo\OData\Tests\Testclasses\TestModel::query()->update(['is_visible' => false]);
+    \Aqqo\OData\Tests\Testclasses\TestModel::factory()->count(2)->create(['is_visible' => true]);
+
+    expect(createQueryFromParams(filter: 'is_visible ne true')->get())->toHaveCount(5);
+    expect(createQueryFromParams(filter: 'is_visible ne false')->get())->toHaveCount(2);
+    expect(createQueryFromParams(filter: 'not is_visible eq true')->get())->toHaveCount(5);
+    expect(createQueryFromParams(filter: 'not is_visible eq false')->get())->toHaveCount(2);
+});
+
+it('negates an IN filter with boolean literals', function () {
+    \Aqqo\OData\Tests\Testclasses\TestModel::query()->update(['is_visible' => false]);
+    \Aqqo\OData\Tests\Testclasses\TestModel::factory()->count(2)->create(['is_visible' => true]);
+
+    $models = createQueryFromParams(filter: 'not is_visible in (true, false)')->get();
+
+    expect($models)->toHaveCount(0);
+});
+
+it('keeps treating a quoted true as a string value', function () {
+    \Aqqo\OData\Tests\Testclasses\TestModel::factory()->create(['name' => 'true']);
+
+    $models = createQueryFromParams(filter: "name eq 'true'")->get();
+
+    expect($models)->toHaveCount(1);
+    expect($models->first()['name'])->toEqual('true');
+});
+
+it('keeps treating an identifier that starts with true as an identifier', function () {
+    \Aqqo\OData\Tests\Testclasses\TestModel::query()->update(['true_flag' => 'no']);
+    \Aqqo\OData\Tests\Testclasses\TestModel::factory()->create(['true_flag' => 'yes']);
+
+    $models = createQueryFromParams(filter: "true_flag eq 'yes'")->get();
+
+    expect($models)->toHaveCount(1);
+});
+
+// A leading `not` on a relationship lambda was silently dropped, so
+// `not relatedModels/any(...)` returned the same rows as the positive filter.
+
+it('negates an any lambda through not', function () {
+    $related = new \Aqqo\OData\Tests\Testclasses\RelatedModel(['name' => 'NegatedAny']);
+    $related->testModel()->associate($this->models[0]);
+    $related->save();
+
+    $models = createQueryFromParams(filter: "not relatedModels/any(s:s/name eq 'NegatedAny')")->get();
+
+    expect($models)->toHaveCount(4);
+    expect($models->pluck('id')->all())->not->toContain($this->models[0]->id);
+});
+
+it('negates an all lambda through not', function () {
+    // `not all(cond)` holds only for models with at least one related row violating cond,
+    // so models without any related rows must not match either.
+    $matching = new \Aqqo\OData\Tests\Testclasses\RelatedModel(['name' => 'AllMatch']);
+    $matching->testModel()->associate($this->models[0]);
+    $matching->save();
+
+    $violating = new \Aqqo\OData\Tests\Testclasses\RelatedModel(['name' => 'Other']);
+    $violating->testModel()->associate($this->models[1]);
+    $violating->save();
+
+    $models = createQueryFromParams(filter: "not relatedModels/all(s:s/name eq 'AllMatch')")->get();
+
+    expect($models->pluck('id')->all())->toEqual([$this->models[1]->id]);
+});
+
+it('handles IN and NOT IN inside all lambdas', function () {
+    $matching = new \Aqqo\OData\Tests\Testclasses\RelatedModel([
+        'name' => 'MatchingIn',
+        'is_active' => true,
+    ]);
+    $matching->testModel()->associate($this->models[0]);
+    $matching->save();
+
+    $violating = new \Aqqo\OData\Tests\Testclasses\RelatedModel([
+        'name' => 'ViolatingIn',
+        'is_active' => false,
+    ]);
+    $violating->testModel()->associate($this->models[1]);
+    $violating->save();
+
+    $all = createQueryFromParams(filter: 'relatedModels/all(s:s/is_active in (true))')->get();
+    $notAll = createQueryFromParams(filter: 'not relatedModels/all(s:s/is_active in (true))')->get();
+
+    expect($all->pluck('id')->all())
+        ->toEqual($this->models->pluck('id')->reject(
+            fn (int $id) => $id === $this->models[1]->id
+        )->values()->all());
+    expect($notAll->pluck('id')->all())
+        ->toEqual([$this->models[1]->id]);
+});

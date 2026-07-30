@@ -147,22 +147,7 @@ trait FilterTrait
 
                     $builder->{$function}($expandable, function ($query) use ($column, $operator, $value) {
                         if ($column = $this->isValidFilter($column, $operator, $value, $query)) {
-                            if (strtolower($operator) === 'in') {
-                                if (is_array($value)) {
-                                    $query->whereIn($column, $value);
-                                } else {
-                                    // Extract values from the string format ('value1', 'value2')
-                                    preg_match("/\((.*?)\)/", (string)$value, $matches);
-                                    if (isset($matches[1])) {
-                                        $values = array_map(function($val) {
-                                            return trim($val, "'");
-                                        }, explode(',', $matches[1]));
-                                        $query->whereIn($column, $values);
-                                    }
-                                }
-                            } else {
-                                $query->where($column, $operator, $value);
-                            }
+                            $this->applyFilterCondition($query, 'where', $column, $operator, $value);
                         }
                     });
                 }
@@ -185,23 +170,38 @@ trait FilterTrait
                 }
             }
 
-            if (strtolower($operator) === 'in') {
-                if (is_array($value)) {
-                    $builder->{$currentStatement . 'In'}($column, $value);
-                } else {
-                    // Extract values from the string format ('value1', 'value2')
-                    preg_match("/\((.*?)\)/", (string)$value, $matches);
-                    if (isset($matches[1])) {
-                        $values = array_map(function($val) {
-                            return trim($val, "'");
-                        }, explode(',', $matches[1]));
-                        $builder->{$currentStatement . 'In'}($column, $values);
-                    }
-                }
-            } else {
-                $builder->{$currentStatement}($column, $operator, $value);
-            }
+            $this->applyFilterCondition($builder, $currentStatement, $column, $operator, $value);
         }
+    }
+
+    /**
+     * Apply a validated filter condition to the query builder.
+     *
+     * @param Builder<TModelClass> $builder
+     * @param 'where'|'orWhere' $statement
+     * @param string|true $column
+     * @param string|array<int, string>|null $value
+     */
+    private function applyFilterCondition(
+        Builder $builder,
+        string $statement,
+        string|true $column,
+        string $operator,
+        string|array|null $value
+    ): void {
+        $normalisedOperator = strtoupper($operator);
+
+        if (in_array($normalisedOperator, ['IN', 'NOT IN'], true)) {
+            if (!is_array($value)) {
+                return;
+            }
+
+            $method = $statement . ($normalisedOperator === 'NOT IN' ? 'NotIn' : 'In');
+            $builder->{$method}($column, $value);
+            return;
+        }
+
+        $builder->{$statement}($column, $operator, $value);
     }
 
     /**
@@ -264,7 +264,7 @@ trait FilterTrait
         }
 
         // Special handling for in operator
-        if (strtolower($operator) === 'in') {
+        if (in_array(strtoupper($operator), ['IN', 'NOT IN'], true)) {
             if (!is_array($value) || empty($value)) {
                 return false;
             }
@@ -335,6 +335,12 @@ trait FilterTrait
      */
     private function splitInput(string $input, bool $inverseOperator = false): array
     {
+        // A leading `not` negates the expression that follows it, so drop it and invert the operator.
+        if (preg_match('/^\s*not\s+(?=[A-Za-z_])(.+)$/i', $input, $notMatches)) {
+            $input = $notMatches[1];
+            $inverseOperator = !$inverseOperator;
+        }
+
         // Define the regex pattern to match tokens:
         // 1. Functions and operators
         // 2. Parentheses and commas
@@ -342,7 +348,9 @@ trait FilterTrait
         $pattern = '/\b(contains|startswith|endswith|and|or|not|eq|ne|gt|ge|lt|le|in)\b|([(),])|\'([^\']*)\''
             // 4. Numeric or date/time (anything starting with a digit).
             . '|(\d+[-+.:TZ0-9]*)'
-            // 5. Field names or identifiers
+            // 5. Boolean literals. Must precede the identifier alternative, which would otherwise swallow them.
+            . '|\b(true|false)\b'
+            // 6. Field names or identifiers
             . '|([A-Za-z_][A-Za-z0-9_]*)'
             . '/i';
         $lambda = '';
@@ -372,9 +380,13 @@ trait FilterTrait
                     return $token;
                 }
 
-            } elseif (!empty($match[5])) {
+            } elseif (($match[5] ?? '') !== '') {
+                // Boolean literal. Normalise to the numeric form the query builder already handles,
+                // so that `eq true` behaves exactly like `eq 1` on the underlying boolean column.
+                return strtolower($match[5]) === 'true' ? '1' : '0';
+            } elseif (!empty($match[6])) {
                 // Field names or identifiers
-                return $match[5];
+                return $match[6];
             }
             return null;
         }, $matches);
@@ -454,6 +466,12 @@ trait FilterTrait
             }
             
             $lambda = $tokens[1];
+            if ($inverseOperator) {
+                // `not any(cond)` ≡ ¬∃(cond) and `not all(cond)` ≡ ∃(¬cond). The operator mapping
+                // above already keys off the original quantifier, so the leading `not` only flips
+                // which quantifier drives the whereHas/whereDoesntHave choice.
+                $lambda = $lambda === 'any' ? 'all' : 'any';
+            }
             $relation = $tokens[0];
         } else {
             $column = $tokens[0];
