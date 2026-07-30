@@ -67,6 +67,20 @@ it('Handle boolean literals', function (?string $filter, string $result) {
     "Identifier starting with true" => ["true_flag eq 'yes'", 'select * from "test_models" where "test_models"."true_flag" = \'yes\' limit 100 offset 0'],
 ]);
 
+it('Handle negated lambdas', function (?string $filter, string $result) {
+    $query = createQueryFromParams(filter: $filter);
+    expect($query->toSql())->toEqual($result);
+})->with([
+    // `not relation/any(cond)` ≡ no related row matches ≡ whereDoesntHave(cond)
+    "not any" => ["not relatedModels/any(s:s/name eq 'Aqqo')", 'select * from "test_models" where not exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and "related_models"."name" = \'Aqqo\') limit 100 offset 0'],
+    // `not relation/all(cond)` ≡ some related row violates cond ≡ whereHas(¬cond)
+    "not all" => ["not relatedModels/all(f:f/cost gt 10)", 'select * from "test_models" where exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and "related_models"."cost" <= \'10\') limit 100 offset 0'],
+    "not any with a boolean literal" => ["not relatedModels/any(s:s/is_active eq true)", 'select * from "test_models" where not exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and "related_models"."is_active" = \'1\') limit 100 offset 0'],
+    "not all with a boolean literal" => ["not relatedModels/all(s:s/is_active eq true)", 'select * from "test_models" where exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and "related_models"."is_active" != \'1\') limit 100 offset 0'],
+    "not any with in" => ["not relatedModels/any(s:s/name in ('Related1', 'Related2'))", 'select * from "test_models" where not exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and "related_models"."name" in (\'Related1\', \'Related2\')) limit 100 offset 0'],
+    "not any combined with another filter" => ["name eq 'Aqqo' and not relatedModels/any(s:s/name eq 'Aqqo')", 'select * from "test_models" where (("test_models"."name" = \'Aqqo\') and (not exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and "related_models"."name" = \'Aqqo\'))) limit 100 offset 0'],
+]);
+
 it('Handle dateTimeOffset literals', function (?string $filter, string $result) {
     $query = createQueryFromParams(filter: $filter);
     expect($query->toSql())->toEqual($result);

@@ -598,3 +598,33 @@ it('keeps treating an identifier that starts with true as an identifier', functi
 
     expect($models)->toHaveCount(1);
 });
+
+// A leading `not` on a relationship lambda was silently dropped, so
+// `not relatedModels/any(...)` returned the same rows as the positive filter.
+
+it('negates an any lambda through not', function () {
+    $related = new \Aqqo\OData\Tests\Testclasses\RelatedModel(['name' => 'NegatedAny']);
+    $related->testModel()->associate($this->models[0]);
+    $related->save();
+
+    $models = createQueryFromParams(filter: "not relatedModels/any(s:s/name eq 'NegatedAny')")->get();
+
+    expect($models)->toHaveCount(4);
+    expect($models->pluck('id')->all())->not->toContain($this->models[0]->id);
+});
+
+it('negates an all lambda through not', function () {
+    // `not all(cond)` holds only for models with at least one related row violating cond,
+    // so models without any related rows must not match either.
+    $matching = new \Aqqo\OData\Tests\Testclasses\RelatedModel(['name' => 'AllMatch']);
+    $matching->testModel()->associate($this->models[0]);
+    $matching->save();
+
+    $violating = new \Aqqo\OData\Tests\Testclasses\RelatedModel(['name' => 'Other']);
+    $violating->testModel()->associate($this->models[1]);
+    $violating->save();
+
+    $models = createQueryFromParams(filter: "not relatedModels/all(s:s/name eq 'AllMatch')")->get();
+
+    expect($models->pluck('id')->all())->toEqual([$this->models[1]->id]);
+});

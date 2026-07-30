@@ -466,6 +466,12 @@ trait FilterTrait
             }
             
             $lambda = $tokens[1];
+            if ($inverseOperator) {
+                // `not any(cond)` ≡ ¬∃(cond) and `not all(cond)` ≡ ∃(¬cond). The operator mapping
+                // above already keys off the original quantifier, so the leading `not` only flips
+                // which quantifier drives the whereHas/whereDoesntHave choice.
+                $lambda = $lambda === 'any' ? 'all' : 'any';
+            }
             $relation = $tokens[0];
         } else {
             $column = $tokens[0];
