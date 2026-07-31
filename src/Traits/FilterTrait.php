@@ -147,13 +147,17 @@ trait FilterTrait
                     }
 
                     $builder->{$function}($expandable, function ($query) use ($column, $operator, $value) {
-                        if (!$this->isValidFilter($column, $operator, $value, $query) && $this->strict) {
-                            throw new QueryException("Invalid \$filter condition on '{$column}'. The property is unknown or not filterable on the expanded relation.");
+                        $resolved = $this->isValidFilter($column, $operator, $value, $query);
+
+                        if ($resolved === false) {
+                            if ($this->strict && $column !== '' && $this->isPropertyFilterable($column, ClassUtils::getShortName($query->getModel())) === false) {
+                                throw new QueryException("Invalid \$filter condition on '{$column}'. The property is unknown or not filterable on the expanded relation.");
+                            }
+
+                            return;
                         }
 
-                        if ($column = $this->isValidFilter($column, $operator, $value, $query)) {
-                            $this->applyFilterCondition($query, 'where', $column, $operator, $value);
-                        }
+                        $this->applyFilterCondition($query, 'where', $resolved, $operator, $value);
                     });
                 } elseif ($this->strict) {
                     throw new QueryException("Invalid \$filter: relation '{$relation}' is unknown or not expandable.");
@@ -161,13 +165,19 @@ trait FilterTrait
                 continue;
             }
 
-            if (!$column = $this->isValidFilter($column, $operator, $value, $builder)) {
-                if ($this->strict) {
-                    throw new QueryException("Invalid \$filter condition on '{$filterPart}'. The property is unknown, not filterable, or the value is empty.");
+            $resolved = $this->isValidFilter($column, $operator, $value, $builder);
+
+            if ($resolved === false) {
+                // Strict only rejects unknown/unfilterable properties; conditions the parser
+                // could not extract or whose values the library cannot apply are skipped as before.
+                if ($this->strict && $column !== '' && $this->isPropertyFilterable($column, ClassUtils::getShortName($builder->getModel())) === false) {
+                    throw new QueryException("Invalid \$filter condition on '{$filterPart}'. The property is unknown or not filterable.");
                 }
 
                 continue;
             }
+
+            $column = $resolved;
 
             // Handle table name qualification
             if (!str_contains((string)$column, '.')) {
