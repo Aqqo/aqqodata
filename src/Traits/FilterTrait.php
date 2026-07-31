@@ -2,6 +2,7 @@
 
 namespace Aqqo\OData\Traits;
 
+use Aqqo\OData\Exceptions\QueryException;
 use Aqqo\OData\Utils\ClassUtils;
 use Aqqo\OData\Utils\OperatorUtils;
 use Illuminate\Database\Eloquent\Builder;
@@ -146,15 +147,25 @@ trait FilterTrait
                     }
 
                     $builder->{$function}($expandable, function ($query) use ($column, $operator, $value) {
+                        if (!$this->isValidFilter($column, $operator, $value, $query) && $this->strict) {
+                            throw new QueryException("Invalid \$filter condition on '{$column}'. The property is unknown or not filterable on the expanded relation.");
+                        }
+
                         if ($column = $this->isValidFilter($column, $operator, $value, $query)) {
                             $this->applyFilterCondition($query, 'where', $column, $operator, $value);
                         }
                     });
+                } elseif ($this->strict) {
+                    throw new QueryException("Invalid \$filter: relation '{$relation}' is unknown or not expandable.");
                 }
                 continue;
             }
 
             if (!$column = $this->isValidFilter($column, $operator, $value, $builder)) {
+                if ($this->strict) {
+                    throw new QueryException("Invalid \$filter condition on '{$filterPart}'. The property is unknown, not filterable, or the value is empty.");
+                }
+
                 continue;
             }
 
