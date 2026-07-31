@@ -52,7 +52,7 @@ trait OrderByTrait
             // Non-strict keeps the historic raw passthrough for undeclared properties.
             $column = $this->isPropertyOrderable($property, ClassUtils::getShortName($builder->getModel()));
 
-            if (!is_string($column) && $this->strict) {
+            if ($column === false && $this->strict) {
                 throw new QueryException("Cannot order by '{$property}'. Property is unknown or not orderable.");
             }
 

@@ -36,3 +36,9 @@ it('Keeps silently skipping unknown filter properties outside strict mode', func
     $query = createQueryFromParams(filter: "nonexistent eq 'x'");
     expect($query->toSql())->toEqual('select * from "test_models" limit 100 offset 0');
 });
+
+it('Allows orderby on models without declared properties in strict mode', function () {
+    $request = new \Illuminate\Http\Request(['$orderby' => 'anything desc']);
+    $query = \Aqqo\OData\Query::for(\Aqqo\OData\Tests\Testclasses\MorphModel::class, $request, strict: true);
+    expect($query->toSql())->toEqual('select * from "morph_models" order by "anything" desc limit 100 offset 0');
+});

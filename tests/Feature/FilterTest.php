@@ -98,3 +98,20 @@ it('Handle dateTimeOffset literals', function (?string $filter, string $result) 
     // Same as in 'Run filter', but now as dateTimeOffset literal (instead of string)
     "Grouped filter" => ["(start_datetime_utc gt 2024-05-13T06:00:00+00:00 or start_datetime_utc lt 2024-05-13T06:00:00+00:00) and end_datetime_utc lt 2024-05-19T15:00:00+00:00", 'select * from "test_models" where (("test_models"."start_datetime_utc" > \'2024-05-13T06:00:00+00:00\' or "test_models"."start_datetime_utc" < \'2024-05-13T06:00:00+00:00\') and ("test_models"."end_datetime_utc" < \'2024-05-19T15:00:00+00:00\')) limit 100 offset 0'],
 ]);
+
+it('Skips conditions with empty string values without throwing in strict mode', function () {
+    $request = new \Illuminate\Http\Request(['$filter' => "name eq ''"]);
+    $query = \Aqqo\OData\Query::for(\Aqqo\OData\Tests\Testclasses\TestModel::class, $request, strict: true);
+    expect($query->toSql())->toEqual('select * from "test_models" limit 100 offset 0');
+});
+
+it('Skips valid properties with empty value lists without throwing in strict mode', function () {
+    $request = new \Illuminate\Http\Request(['$filter' => 'name in ()']);
+    $query = \Aqqo\OData\Query::for(\Aqqo\OData\Tests\Testclasses\TestModel::class, $request, strict: true);
+    expect($query->toSql())->toEqual('select * from "test_models" limit 100 offset 0');
+});
+
+it('Throws on unknown filter property inside a lambda in strict mode', function () {
+    $request = new \Illuminate\Http\Request(['$filter' => "relatedModels/any(s:s/nonexistent eq 'x')"]);
+    \Aqqo\OData\Query::for(\Aqqo\OData\Tests\Testclasses\TestModel::class, $request, strict: true);
+})->throws(\Aqqo\OData\Exceptions\QueryException::class);
