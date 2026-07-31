@@ -73,7 +73,8 @@ class Query implements \JsonSerializable
         protected bool            $top = true,
         protected bool            $count = true,
         protected bool            $orderby = true,
-        protected ?Request        $request = null
+        protected ?Request        $request = null,
+        protected bool            $strict = false
     )
     {
         $this->request = !is_null($this->request) ? Request::createFrom($this->request) : app(Request::class);
@@ -104,10 +105,10 @@ class Query implements \JsonSerializable
      * @return static
      * @throws \ReflectionException
      */
-    public static function for(Builder|string $subject, ?Request $request = null): static
+    public static function for(Builder|string $subject, ?Request $request = null, bool $strict = false): static
     {
         $subject = is_subclass_of($subject, Model::class) ? $subject::query() : $subject;
-        return new static($subject, request: $request);
+        return new static($subject, request: $request, strict: $strict);
     }
 
     /**

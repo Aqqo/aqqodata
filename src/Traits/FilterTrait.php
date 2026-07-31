@@ -2,6 +2,7 @@
 
 namespace Aqqo\OData\Traits;
 
+use Aqqo\OData\Exceptions\QueryException;
 use Aqqo\OData\Utils\ClassUtils;
 use Aqqo\OData\Utils\OperatorUtils;
 use Illuminate\Database\Eloquent\Builder;
@@ -146,17 +147,37 @@ trait FilterTrait
                     }
 
                     $builder->{$function}($expandable, function ($query) use ($column, $operator, $value) {
-                        if ($column = $this->isValidFilter($column, $operator, $value, $query)) {
-                            $this->applyFilterCondition($query, 'where', $column, $operator, $value);
+                        $resolved = $this->isValidFilter($column, $operator, $value, $query);
+
+                        if ($resolved === false) {
+                            if ($this->strict && $column !== '' && $this->isPropertyFilterable($column, ClassUtils::getShortName($query->getModel())) === false) {
+                                throw new QueryException("Invalid \$filter condition on '{$column}'. The property is unknown or not filterable on the expanded relation.");
+                            }
+
+                            return;
                         }
+
+                        $this->applyFilterCondition($query, 'where', $resolved, $operator, $value);
                     });
+                } elseif ($this->strict) {
+                    throw new QueryException("Invalid \$filter: relation '{$relation}' is unknown or not expandable.");
                 }
                 continue;
             }
 
-            if (!$column = $this->isValidFilter($column, $operator, $value, $builder)) {
+            $resolved = $this->isValidFilter($column, $operator, $value, $builder);
+
+            if ($resolved === false) {
+                // Strict only rejects unknown/unfilterable properties; conditions the parser
+                // could not extract or whose values the library cannot apply are skipped as before.
+                if ($this->strict && $column !== '' && $this->isPropertyFilterable($column, ClassUtils::getShortName($builder->getModel())) === false) {
+                    throw new QueryException("Invalid \$filter condition on '{$filterPart}'. The property is unknown or not filterable.");
+                }
+
                 continue;
             }
+
+            $column = $resolved;
 
             // Handle table name qualification
             if (!str_contains((string)$column, '.')) {
