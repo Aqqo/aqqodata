@@ -36,6 +36,8 @@ class Testcase extends \Orchestra\Testbench\TestCase
             $table->string('full_name')->nullable();
             $table->double('salary')->nullable();
             $table->boolean('is_visible')->default(true);
+            // Identifier that starts with the boolean literal `true`, to guard the tokenizer's word boundaries.
+            $table->string('true_flag')->nullable();
         });
 
         $app['db']->connection()->getSchemaBuilder()->create('append_models', function (Blueprint $table) {
@@ -61,6 +63,7 @@ class Testcase extends \Orchestra\Testbench\TestCase
             $table->string('name');
             $table->string('full_name')->nullable();
             $table->integer('cost')->nullable();
+            $table->boolean('is_active')->default(true);
         });
 
         $app['db']->connection()->getSchemaBuilder()->create('nested_related_models', function (Blueprint $table) {

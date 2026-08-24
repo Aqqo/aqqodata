@@ -16,3 +16,29 @@ it('Runs orderby', function (?string $orderby, string $result) {
 ]);
 
 
+
+it('Maps orderby property aliases to their database columns', function () {
+    $query = createQueryFromParams(orderby: 'odatacol desc');
+    expect($query->toSql())->toEqual('select * from "test_models" order by "dbcol" desc limit 100 offset 0');
+});
+
+it('Throws on unknown orderby property in strict mode', function () {
+    $request = new \Illuminate\Http\Request(['$orderby' => 'nonexistent asc']);
+    \Aqqo\OData\Query::for(\Aqqo\OData\Tests\Testclasses\TestModel::class, $request, strict: true);
+})->throws(\Aqqo\OData\Exceptions\QueryException::class);
+
+it('Throws on unknown filter property in strict mode', function () {
+    $request = new \Illuminate\Http\Request(['$filter' => "nonexistent eq 'x'"]);
+    \Aqqo\OData\Query::for(\Aqqo\OData\Tests\Testclasses\TestModel::class, $request, strict: true);
+})->throws(\Aqqo\OData\Exceptions\QueryException::class);
+
+it('Keeps silently skipping unknown filter properties outside strict mode', function () {
+    $query = createQueryFromParams(filter: "nonexistent eq 'x'");
+    expect($query->toSql())->toEqual('select * from "test_models" limit 100 offset 0');
+});
+
+it('Allows orderby on models without declared properties in strict mode', function () {
+    $request = new \Illuminate\Http\Request(['$orderby' => 'anything desc']);
+    $query = \Aqqo\OData\Query::for(\Aqqo\OData\Tests\Testclasses\MorphModel::class, $request, strict: true);
+    expect($query->toSql())->toEqual('select * from "morph_models" order by "anything" desc limit 100 offset 0');
+});
