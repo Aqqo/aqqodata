@@ -115,3 +115,68 @@ it('Throws on unknown filter property inside a lambda in strict mode', function 
     $request = new \Illuminate\Http\Request(['$filter' => "relatedModels/any(s:s/nonexistent eq 'x')"]);
     \Aqqo\OData\Query::for(\Aqqo\OData\Tests\Testclasses\TestModel::class, $request, strict: true);
 })->throws(\Aqqo\OData\Exceptions\QueryException::class);
+
+function strictUtcQuery(string $filter, bool $strictUtcDatetimes = true): \Aqqo\OData\Query
+{
+    $request = new \Illuminate\Http\Request(['$filter' => $filter]);
+    return \Aqqo\OData\Query::for(\Aqqo\OData\Tests\Testclasses\TestModel::class, $request, strictUtcDatetimes: $strictUtcDatetimes);
+}
+
+it('Leaves UTC datetime literals untouched when strictUtcDatetimes is off', function (string $filter, string $result) {
+    expect(strictUtcQuery($filter, false)->toSql())->toEqual($result);
+})->with([
+    "Naive unquoted is dropped" => ["start_datetime_utc ge 2025-06-01T10:00:00", 'select * from "test_models" limit 100 offset 0'],
+    "Naive quoted is passed verbatim" => ["start_datetime_utc ge '2025-06-01T10:00:00'", 'select * from "test_models" where "test_models"."start_datetime_utc" >= \'2025-06-01T10:00:00\' limit 100 offset 0'],
+    "Offset is passed verbatim" => ["start_datetime_utc ge 2025-06-01T10:00:00+02:00", 'select * from "test_models" where "test_models"."start_datetime_utc" >= \'2025-06-01T10:00:00+02:00\' limit 100 offset 0'],
+]);
+
+it('Rejects naive datetimes on UTC properties when strictUtcDatetimes is on', function (string $filter) {
+    strictUtcQuery($filter);
+})->throws(\Aqqo\OData\Exceptions\QueryException::class, "Invalid \$filter value")->with([
+    "Quoted with T" => ["start_datetime_utc ge '2025-06-01T10:00:00'"],
+    "Quoted with space" => ["start_datetime_utc ge '2025-06-01 10:00:00'"],
+    "Quoted without seconds" => ["start_datetime_utc ge '2025-06-01T10:00'"],
+    "Quoted with fractions" => ["start_datetime_utc ge '2025-06-01T10:00:00.123'"],
+    "Unquoted" => ["start_datetime_utc ge 2025-06-01T10:00:00"],
+    "Unquoted next to another condition" => ["name eq 'Aqqo' and end_datetime_utc lt 2025-06-01T10:00:00"],
+    "IN list element" => ["start_datetime_utc in ('2025-06-01T10:00:00Z', '2025-06-01T11:00:00')"],
+    "Inside an any lambda" => ["relatedModels/any(s:s/available_from_utc lt 2025-06-01T10:00:00)"],
+]);
+
+it('Names the property and the required offset in the strictUtcDatetimes error', function () {
+    strictUtcQuery("start_datetime_utc ge '2025-06-01T10:00:00'");
+})->throws(\Aqqo\OData\Exceptions\QueryException::class, "Invalid \$filter value '2025-06-01T10:00:00' for 'start_datetime_utc'. A UTC datetime needs 'Z' or an offset, e.g. '2025-06-01T10:00:00Z'.");
+
+it('Converts UTC datetime literals to the UTC instant when strictUtcDatetimes is on', function (string $filter, string $result) {
+    expect(strictUtcQuery($filter)->toSql())->toEqual($result);
+})->with([
+    "Unquoted Z" => ["start_datetime_utc ge 2025-06-01T10:00:00Z", 'select * from "test_models" where "test_models"."start_datetime_utc" >= \'2025-06-01 10:00:00\' limit 100 offset 0'],
+    "Quoted Z without seconds" => ["start_datetime_utc ge '2025-06-01T10:00Z'", 'select * from "test_models" where "test_models"."start_datetime_utc" >= \'2025-06-01 10:00:00\' limit 100 offset 0'],
+    "Unquoted +02:00" => ["start_datetime_utc ge 2025-06-01T10:00:00+02:00", 'select * from "test_models" where "test_models"."start_datetime_utc" >= \'2025-06-01 08:00:00\' limit 100 offset 0'],
+    "Quoted +02:00" => ["start_datetime_utc ge '2025-06-01T10:00:00+02:00'", 'select * from "test_models" where "test_models"."start_datetime_utc" >= \'2025-06-01 08:00:00\' limit 100 offset 0'],
+    "Quoted -05:00 across midnight" => ["start_datetime_utc lt '2025-06-01T22:30:00-05:00'", 'select * from "test_models" where "test_models"."start_datetime_utc" < \'2025-06-02 03:30:00\' limit 100 offset 0'],
+    "Quoted with space and Z" => ["start_datetime_utc ge '2025-06-01 10:00:00Z'", 'select * from "test_models" where "test_models"."start_datetime_utc" >= \'2025-06-01 10:00:00\' limit 100 offset 0'],
+    "Fractions with Z" => ["start_datetime_utc ge 2025-06-01T10:00:00.125Z", 'select * from "test_models" where "test_models"."start_datetime_utc" >= \'2025-06-01 10:00:00\' limit 100 offset 0'],
+    "IN list" => ["start_datetime_utc in ('2025-06-01T10:00:00Z', '2025-06-01T10:00:00+02:00')", 'select * from "test_models" where "test_models"."start_datetime_utc" in (\'2025-06-01 10:00:00\', \'2025-06-01 08:00:00\') limit 100 offset 0'],
+    "Grouped filter" => ["(start_datetime_utc gt 2025-06-01T10:00:00+02:00 or start_datetime_utc lt 2025-06-01T06:00:00Z) and name eq 'Aqqo'", 'select * from "test_models" where (("test_models"."start_datetime_utc" > \'2025-06-01 08:00:00\' or "test_models"."start_datetime_utc" < \'2025-06-01 06:00:00\') and ("test_models"."name" = \'Aqqo\')) limit 100 offset 0'],
+    "Inside an any lambda" => ["relatedModels/any(s:s/available_from_utc lt 2025-06-01T10:00:00+02:00)", 'select * from "test_models" where exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and "related_models"."available_from_utc" < \'2025-06-01 08:00:00\') limit 100 offset 0'],
+    "Date-only is untouched" => ["start_datetime_utc ge 2025-06-01", 'select * from "test_models" where "test_models"."start_datetime_utc" >= \'2025-06-01\' limit 100 offset 0'],
+    "Quoted date-only is untouched" => ["start_datetime_utc ge '2025-06-01'", 'select * from "test_models" where "test_models"."start_datetime_utc" >= \'2025-06-01\' limit 100 offset 0'],
+    "Non-datetime value is untouched" => ["start_datetime_utc eq 'now'", 'select * from "test_models" where "test_models"."start_datetime_utc" = \'now\' limit 100 offset 0'],
+    "Non-UTC property is untouched" => ["name eq '2025-06-01T10:00:00+02:00'", 'select * from "test_models" where "test_models"."name" = \'2025-06-01T10:00:00+02:00\' limit 100 offset 0'],
+    "Naive datetime on a non-UTC property is kept" => ["name eq '2025-06-01T10:00:00'", 'select * from "test_models" where "test_models"."name" = \'2025-06-01T10:00:00\' limit 100 offset 0'],
+]);
+
+it('Converts and rejects UTC datetimes in applyRelationshipCondition when strictUtcDatetimes is on', function () {
+    $query = strictUtcQuery('');
+    $apply = fn(string $condition) => \Closure::bind(function () use ($condition) {
+        $builder = \Aqqo\OData\Tests\Testclasses\TestModel::query();
+        $this->applyRelationshipCondition($builder, 'any', 'relatedModel', $condition);
+        return $builder->toRawSql();
+    }, $query, \Aqqo\OData\Query::class)();
+
+    expect($apply("available_from_utc lt '2025-06-01T10:00:00+02:00'"))
+        ->toEqual('select * from "test_models" where exists (select * from "related_models" where "test_models"."id" = "related_models"."test_model_id" and "available_from_utc" < \'2025-06-01 08:00:00\')');
+    expect(fn() => $apply("available_from_utc lt '2025-06-01T10:00:00'"))
+        ->toThrow(\Aqqo\OData\Exceptions\QueryException::class, "for 'available_from_utc'");
+});

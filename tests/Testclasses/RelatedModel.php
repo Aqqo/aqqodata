@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[ODataProperty('name')]
 #[ODataProperty('cost')]
 #[ODataProperty('is_active')]
+#[ODataProperty('available_from_utc')]
 class RelatedModel extends Model
 {
     protected $guarded = [];

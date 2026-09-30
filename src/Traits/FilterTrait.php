@@ -7,6 +7,7 @@ use Aqqo\OData\Utils\ClassUtils;
 use Aqqo\OData\Utils\OperatorUtils;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use ReflectionClass;
 
@@ -211,6 +212,7 @@ trait FilterTrait
         string|array|null $value
     ): void {
         $normalisedOperator = strtoupper($operator);
+        $value = $this->normaliseUtcDatetimeValue($column, $value);
 
         if (in_array($normalisedOperator, ['IN', 'NOT IN'], true)) {
             if (!is_array($value)) {
@@ -223,6 +225,53 @@ trait FilterTrait
         }
 
         $builder->{$statement}($column, $operator, $value);
+    }
+
+    /**
+     * With strictUtcDatetimes on, datetime values for *_utc properties must carry 'Z' or an offset;
+     * they are converted to the UTC instant, since MySQL/MariaDB ignore an offset in a DATETIME comparison.
+     *
+     * @param string|true $column
+     * @param string|array<int, string>|null $value
+     * @return string|array<int, string>|null
+     * @throws QueryException
+     */
+    private function normaliseUtcDatetimeValue(string|true $column, string|array|null $value): string|array|null
+    {
+        if (!$this->strictUtcDatetimes || !is_string($column)) {
+            return $value;
+        }
+
+        $property = Str::afterLast($column, '.');
+
+        if (!str_ends_with($property, '_utc')) {
+            return $value;
+        }
+
+        if (is_array($value)) {
+            return array_map(fn($item) => $this->toUtcDatetime($property, $item), $value);
+        }
+
+        return is_string($value) ? $this->toUtcDatetime($property, $value) : $value;
+    }
+
+    /**
+     * @param string $property
+     * @param string $value
+     * @return string
+     * @throws QueryException
+     */
+    private function toUtcDatetime(string $property, string $value): string
+    {
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(?<offset>Z|[-+]\d{2}:\d{2})?$/i', $value, $matches)) {
+            return $value;
+        }
+
+        if (($matches['offset'] ?? '') === '') {
+            throw new QueryException("Invalid \$filter value '{$value}' for '{$property}'. A UTC datetime needs 'Z' or an offset, e.g. '2025-06-01T10:00:00Z'.");
+        }
+
+        return Carbon::parse($value)->utc()->format('Y-m-d H:i:s');
     }
 
     /**
@@ -341,6 +390,8 @@ trait FilterTrait
 
         $method = ($function === 'all' ? 'whereDoesntHave' : 'whereHas');
 
+        $value = $this->normaliseUtcDatetimeValue($column, $value);
+
         $builder->{$method}($expandable, function (Builder $q) use ($column, $operator, $value) {
             $q->where($column, $operator, $value);
         });
@@ -398,6 +449,10 @@ trait FilterTrait
                     return $token;
                 } else if (preg_match('/^\d+-\d+-\d+T\d+:\d+(:\d+(.\d+)?)?(Z|[-+]\d+:\d+)$/', $token, $_)) {
                     // dateTimeOffsetValue = year "-" month "-" day "T" hour ":" minute [ ":" second [ "." fractionalSeconds ] ] ( "Z" / sign hour ":" minute )
+                    return $token;
+                } else if ($this->strictUtcDatetimes && preg_match('/^\d+-\d+-\d+T\d+:\d+(:\d+(.\d+)?)?$/', $token, $_)) {
+                    // Naive dateTime: kept only in strictUtcDatetimes mode, so it is rejected on *_utc properties
+                    // instead of silently dropping the condition.
                     return $token;
                 }
 
