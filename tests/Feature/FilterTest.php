@@ -165,7 +165,36 @@ it('Converts UTC datetime literals to the UTC instant when strictUtcDatetimes is
     "Non-datetime value is untouched" => ["start_datetime_utc eq 'now'", 'select * from "test_models" where "test_models"."start_datetime_utc" = \'now\' limit 100 offset 0'],
     "Non-UTC property is untouched" => ["name eq '2025-06-01T10:00:00+02:00'", 'select * from "test_models" where "test_models"."name" = \'2025-06-01T10:00:00+02:00\' limit 100 offset 0'],
     "Naive datetime on a non-UTC property is kept" => ["name eq '2025-06-01T10:00:00'", 'select * from "test_models" where "test_models"."name" = \'2025-06-01T10:00:00\' limit 100 offset 0'],
+    "Aliased UTC property is converted" => ["starts_at_utc ge '2025-06-01T10:00:00+02:00'", 'select * from "test_models" where "test_models"."starts_at" >= \'2025-06-01 08:00:00\' limit 100 offset 0'],
+    "Non-UTC property with a *_utc source is untouched" => ["ends_at eq '2025-06-01T10:00:00'", 'select * from "test_models" where "test_models"."ends_at_utc" = \'2025-06-01T10:00:00\' limit 100 offset 0'],
 ]);
+
+it('Rejects naive datetimes on an aliased UTC property when strictUtcDatetimes is on', function () {
+    strictUtcQuery("starts_at_utc ge '2025-06-01T10:00:00'");
+})->throws(\Aqqo\OData\Exceptions\QueryException::class, "for 'starts_at_utc'");
+
+it('Rejects invalid datetimes on UTC properties when strictUtcDatetimes is on', function (string $filter) {
+    strictUtcQuery($filter);
+})->throws(\Aqqo\OData\Exceptions\QueryException::class, "It is not a valid datetime.")->with([
+    "Month 13" => ["start_datetime_utc ge '2025-13-01T10:00:00Z'"],
+    "Hour 25" => ["start_datetime_utc ge '2025-06-01T25:00:00Z'"],
+    "February 31st" => ["start_datetime_utc ge '2025-02-31T10:00:00Z'"],
+    "Hour 24" => ["start_datetime_utc ge '2025-06-01T24:00:00+02:00'"],
+    "Minute 60" => ["start_datetime_utc ge 2025-06-01T10:60:00Z"],
+    "Second 60" => ["start_datetime_utc ge '2025-06-01T10:00:60Z'"],
+]);
+
+it('Keeps the parse error as the previous exception for invalid UTC datetimes', function () {
+    try {
+        strictUtcQuery("start_datetime_utc ge '2025-13-01T10:00:00Z'");
+    } catch (\Aqqo\OData\Exceptions\QueryException $e) {
+        expect($e->getMessage())->toBe("Invalid \$filter value '2025-13-01T10:00:00Z' for 'start_datetime_utc'. It is not a valid datetime.")
+            ->and($e->getPrevious())->toBeInstanceOf(\Carbon\Exceptions\InvalidFormatException::class);
+        return;
+    }
+
+    $this->fail('Expected a QueryException.');
+});
 
 it('Converts and rejects UTC datetimes in applyRelationshipCondition when strictUtcDatetimes is on', function () {
     $query = strictUtcQuery('');
