@@ -24,6 +24,8 @@ use Illuminate\Support\Carbon;
 #[ODataProperty('odatacol', source: 'dbcol')]
 #[ODataProperty('start_datetime_utc')]
 #[ODataProperty('end_datetime_utc')]
+#[ODataProperty('starts_at_utc', source: 'starts_at')]
+#[ODataProperty('ends_at', source: 'ends_at_utc')]
 class TestModel extends Model
 {
     use HasFactory;

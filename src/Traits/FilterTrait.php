@@ -5,8 +5,10 @@ namespace Aqqo\OData\Traits;
 use Aqqo\OData\Exceptions\QueryException;
 use Aqqo\OData\Utils\ClassUtils;
 use Aqqo\OData\Utils\OperatorUtils;
+use Carbon\Exceptions\InvalidFormatException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use ReflectionClass;
 
@@ -157,7 +159,7 @@ trait FilterTrait
                             return;
                         }
 
-                        $this->applyFilterCondition($query, 'where', $resolved, $operator, $value);
+                        $this->applyFilterCondition($query, 'where', $resolved, $column, $operator, $value);
                     });
                 } elseif ($this->strict) {
                     throw new QueryException("Invalid \$filter: relation '{$relation}' is unknown or not expandable.");
@@ -177,6 +179,7 @@ trait FilterTrait
                 continue;
             }
 
+            $property = $column;
             $column = $resolved;
 
             // Handle table name qualification
@@ -191,7 +194,7 @@ trait FilterTrait
                 }
             }
 
-            $this->applyFilterCondition($builder, $currentStatement, $column, $operator, $value);
+            $this->applyFilterCondition($builder, $currentStatement, $column, $property, $operator, $value);
         }
     }
 
@@ -200,17 +203,20 @@ trait FilterTrait
      *
      * @param Builder<TModelClass> $builder
      * @param 'where'|'orWhere' $statement
-     * @param string|true $column
+     * @param string|true $column The resolved database column.
+     * @param string $property The OData property name as used in the $filter.
      * @param string|array<int, string>|null $value
      */
     private function applyFilterCondition(
         Builder $builder,
         string $statement,
         string|true $column,
+        string $property,
         string $operator,
         string|array|null $value
     ): void {
         $normalisedOperator = strtoupper($operator);
+        $value = $this->normaliseUtcDatetimeValue($property, $value);
 
         if (in_array($normalisedOperator, ['IN', 'NOT IN'], true)) {
             if (!is_array($value)) {
@@ -223,6 +229,61 @@ trait FilterTrait
         }
 
         $builder->{$statement}($column, $operator, $value);
+    }
+
+    /**
+     * With strictUtcDatetimes on, datetime values for *_utc properties must carry 'Z' or an offset;
+     * they are converted to the UTC instant, since MySQL/MariaDB ignore an offset in a DATETIME comparison.
+     *
+     * @param string $property The OData property name, not the resolved database column.
+     * @param string|array<int, string>|null $value
+     * @return string|array<int, string>|null
+     * @throws QueryException
+     */
+    private function normaliseUtcDatetimeValue(string $property, string|array|null $value): string|array|null
+    {
+        if (!$this->strictUtcDatetimes || !str_ends_with($property, '_utc')) {
+            return $value;
+        }
+
+        if (is_array($value)) {
+            return array_map(fn($item) => $this->toUtcDatetime($property, $item), $value);
+        }
+
+        return is_string($value) ? $this->toUtcDatetime($property, $value) : $value;
+    }
+
+    /**
+     * @param string $property
+     * @param string $value
+     * @return string
+     * @throws QueryException
+     */
+    private function toUtcDatetime(string $property, string $value): string
+    {
+        if (!preg_match('/^(?<date>\d{4}-\d{2}-\d{2})[T ](?<time>\d{2}:\d{2})(:(?<seconds>\d{2})(\.\d+)?)?(?<offset>Z|[-+]\d{2}:\d{2})?$/i', $value, $matches)) {
+            return $value;
+        }
+
+        if (($matches['offset'] ?? '') === '') {
+            throw new QueryException("Invalid \$filter value '{$value}' for '{$property}'. A UTC datetime needs 'Z' or an offset, e.g. '2025-06-01T10:00:00Z'.");
+        }
+
+        $invalid = "Invalid \$filter value '{$value}' for '{$property}'. It is not a valid datetime.";
+
+        try {
+            $datetime = Carbon::parse($value);
+        } catch (InvalidFormatException $e) {
+            throw new QueryException($invalid, 0, $e);
+        }
+
+        // PHP rolls impossible dates and times over (2025-02-31 becomes 2025-03-03), so compare against the input.
+        $expected = "{$matches['date']} {$matches['time']}:" . (($matches['seconds'] ?? '') ?: '00');
+        if ($datetime->format('Y-m-d H:i:s') !== $expected) {
+            throw new QueryException($invalid);
+        }
+
+        return $datetime->utc()->format('Y-m-d H:i:s');
     }
 
     /**
@@ -341,6 +402,8 @@ trait FilterTrait
 
         $method = ($function === 'all' ? 'whereDoesntHave' : 'whereHas');
 
+        $value = $this->normaliseUtcDatetimeValue($column, $value);
+
         $builder->{$method}($expandable, function (Builder $q) use ($column, $operator, $value) {
             $q->where($column, $operator, $value);
         });
@@ -398,6 +461,10 @@ trait FilterTrait
                     return $token;
                 } else if (preg_match('/^\d+-\d+-\d+T\d+:\d+(:\d+(.\d+)?)?(Z|[-+]\d+:\d+)$/', $token, $_)) {
                     // dateTimeOffsetValue = year "-" month "-" day "T" hour ":" minute [ ":" second [ "." fractionalSeconds ] ] ( "Z" / sign hour ":" minute )
+                    return $token;
+                } else if ($this->strictUtcDatetimes && preg_match('/^\d+-\d+-\d+T\d+:\d+(:\d+(.\d+)?)?$/', $token, $_)) {
+                    // Naive dateTime: kept only in strictUtcDatetimes mode, so it is rejected on *_utc properties
+                    // instead of silently dropping the condition.
                     return $token;
                 }
 

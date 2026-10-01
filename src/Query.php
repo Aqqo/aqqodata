@@ -74,7 +74,8 @@ class Query implements \JsonSerializable
         protected bool            $count = true,
         protected bool            $orderby = true,
         protected ?Request        $request = null,
-        protected bool            $strict = false
+        protected bool            $strict = false,
+        protected bool            $strictUtcDatetimes = false
     )
     {
         $this->request = !is_null($this->request) ? Request::createFrom($this->request) : app(Request::class);
@@ -102,13 +103,16 @@ class Query implements \JsonSerializable
     /**
      * @param Builder<TModelClass>|string $subject
      * @param Request|null $request
+     * @param bool $strict
+     * @param bool $strictUtcDatetimes Reject $filter datetimes without 'Z'/offset on *_utc properties and convert offsets to UTC.
      * @return static
      * @throws \ReflectionException
+     * @throws QueryException When `$strictUtcDatetimes` rejects a `$filter` value, or `$strict` an unknown property.
      */
-    public static function for(Builder|string $subject, ?Request $request = null, bool $strict = false): static
+    public static function for(Builder|string $subject, ?Request $request = null, bool $strict = false, bool $strictUtcDatetimes = false): static
     {
         $subject = is_subclass_of($subject, Model::class) ? $subject::query() : $subject;
-        return new static($subject, request: $request, strict: $strict);
+        return new static($subject, request: $request, strict: $strict, strictUtcDatetimes: $strictUtcDatetimes);
     }
 
     /**
