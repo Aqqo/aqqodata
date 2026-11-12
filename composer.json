@@ -20,7 +20,7 @@
     ],
     "require": {
         "php": "^8.2",
-        "laravel/framework": "^v11.0.0 || ^v12.0.0",
+        "laravel/framework": "^11.56.1 || ^12.68.0",
         "spatie/laravel-package-tools": "^1.16"
     },
     "require-dev": {
